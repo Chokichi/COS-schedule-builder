@@ -6,7 +6,6 @@ import {
   CardContent,
   Button,
   Chip,
-  Divider,
 } from '@mui/material';
 import { Course, FilterState } from '../types';
 

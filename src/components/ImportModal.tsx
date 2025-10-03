@@ -6,7 +6,6 @@ import {
   DialogActions,
   Box,
   Typography,
-  TextField,
   Button,
   LinearProgress,
   Alert,
@@ -14,7 +13,7 @@ import {
   Chip,
   Collapse,
 } from '@mui/material';
-import { Close, ContentPaste, Upload, ExpandMore, ExpandLess } from '@mui/icons-material';
+import { Close, ContentPaste, ExpandMore, ExpandLess } from '@mui/icons-material';
 
 interface ImportModalProps {
   open: boolean;

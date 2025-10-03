@@ -1,12 +1,7 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import {
   Box,
-  Container,
-  AppBar,
-  Toolbar,
   Typography,
-  Grid,
-  Paper,
   ThemeProvider,
   createTheme,
   CssBaseline,
@@ -445,11 +440,12 @@ function App() {
         
         // Update progress every 200 courses (less frequent updates)
         if (processedCourses % 200 === 0) {
-          const progress = 40 + Math.floor((processedCourses / totalCourses) * 30);
+          const currentProcessed = processedCourses;
+          const progress = 40 + Math.floor((currentProcessed / totalCourses) * 30);
           setAppState(prev => ({ 
             ...prev, 
             importProgress: progress,
-            importProgressText: `Processing courses... ${processedCourses}/${totalCourses}`
+            importProgressText: `Processing courses... ${currentProcessed}/${totalCourses}`
           }));
         }
       }

@@ -2,12 +2,10 @@ import React, { useMemo, useState, useCallback } from 'react';
 import {
   Box,
   Typography,
-  Chip,
   Button,
   Tooltip,
   Paper,
 } from '@mui/material';
-import { Add, Remove } from '@mui/icons-material';
 import { Course, FilterState, DAYS, DAY_LABELS, PX_PER_HOUR, DAY_START_MIN, DAY_END_MIN } from '../types';
 
 interface ScheduleGridProps {
@@ -188,32 +186,6 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
     return groups;
   }, []);
 
-  // Function to bring a course and all matching CRNs to the top
-  const bringCourseToTop = useCallback((selectedCourse: Course, day: string) => {
-    setOverlappingGroups(prev => {
-      const updatedGroups = { ...prev };
-      
-      // Find all overlapping groups that contain courses with the same CRN
-      Object.keys(updatedGroups).forEach(groupKey => {
-        const group = updatedGroups[groupKey];
-        const sameCRNIndex = group.courses.findIndex(course => course.CRN === selectedCourse.CRN);
-        if (sameCRNIndex !== -1) {
-          // Move the course with the same CRN to the top (index 0)
-          const reorderedCourses = [...group.courses];
-          const courseToMove = reorderedCourses.splice(sameCRNIndex, 1)[0];
-          reorderedCourses.unshift(courseToMove);
-          
-          updatedGroups[groupKey] = {
-            ...group,
-            courses: reorderedCourses,
-            currentIndex: 0 // The moved course is now at index 0
-          };
-        }
-      });
-      
-      return updatedGroups;
-    });
-  }, []);
 
   // Function to cycle through overlapping courses
   const cycleOverlappingCourses = useCallback((day: string, timeKey: string, direction: 'next' | 'prev' | 'set', targetIndex?: number) => {
