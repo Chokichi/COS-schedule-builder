@@ -367,9 +367,9 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
           </Box>
         }
         arrow
-        enterDelay={600}
-        leaveDelay={600}
-        enterNextDelay={600}
+        enterDelay={400}
+        leaveDelay={400}
+        enterNextDelay={400}
         disableHoverListener={false}
         PopperProps={{
           style: { zIndex: 9999 },
