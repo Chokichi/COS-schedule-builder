@@ -16,7 +16,7 @@ import FilterPanel from './components/FilterPanel';
 import ScheduleGrid from './components/ScheduleGrid';
 import OnlineCoursesList from './components/OnlineCoursesList';
 import ImportModal from './components/ImportModal';
-import { parseHtmlTable } from './utils/parser';
+import { parseHtmlTable, loadBasicSchedule } from './utils/parser';
 
 const lightTheme = createTheme({
   palette: {
@@ -380,7 +380,30 @@ function App() {
     console.log('❌ Saved data discarded');
   }, [clearLocalStorage]);
 
-  const handleParseHtml = useCallback(async (html: string) => {
+  const handleLoadBasicSchedule = useCallback(async () => {
+    console.log('🔄 Loading basic schedule...');
+    setAppState(prev => ({ 
+      ...prev, 
+      isLoading: true, 
+      error: null,
+      importProgress: 0,
+      importProgressText: 'Loading basic schedule...'
+    }));
+
+    try {
+      const html = await loadBasicSchedule();
+      await handleParseHtml(html, true); // true = isBasicSchedule
+    } catch (error) {
+      console.error('Failed to load basic schedule:', error);
+      setAppState(prev => ({ 
+        ...prev, 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : 'Failed to load basic schedule'
+      }));
+    }
+  }, []);
+
+  const handleParseHtml = useCallback(async (html: string, isBasicSchedule: boolean = false) => {
     const startTime = Date.now();
     console.log('🚀 Import started at:', new Date().toLocaleTimeString());
     
@@ -401,7 +424,7 @@ function App() {
         importProgressText: 'Parsing schedule table...' 
       }));
       
-      const parsed = parseHtmlTable(html);
+      const parsed = parseHtmlTable(html, isBasicSchedule);
       const step1Time = Date.now() - step1Start;
       console.log(`📊 Parsing completed in ${step1Time}ms`);
       
@@ -1211,6 +1234,7 @@ function App() {
           open={importModalOpen}
           onClose={() => setImportModalOpen(false)}
           onParseHtml={handleParseHtml}
+          onLoadBasicSchedule={handleLoadBasicSchedule}
           onCompleteImport={() => setImportModalOpen(false)}
           isLoading={appState.isLoading}
           error={appState.error}

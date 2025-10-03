@@ -19,6 +19,7 @@ interface ImportModalProps {
   open: boolean;
   onClose: () => void;
   onParseHtml: (html: string) => Promise<void>;
+  onLoadBasicSchedule: () => Promise<void>;
   onCompleteImport: () => void;
   isLoading: boolean;
   error: string | null;
@@ -34,6 +35,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
   open,
   onClose,
   onParseHtml,
+  onLoadBasicSchedule,
   onCompleteImport,
   isLoading,
   error,
@@ -62,6 +64,17 @@ const ImportModal: React.FC<ImportModalProps> = ({
       setCurrentStep('select');
     } catch (err) {
       console.error('Failed to read clipboard:', err);
+    }
+  };
+
+  const handleLoadBasicSchedule = async () => {
+    try {
+      console.log('🔍 Step 1: Loading basic schedule');
+      await onLoadBasicSchedule();
+      // Move to step 2 after loading completes
+      setCurrentStep('select');
+    } catch (err) {
+      console.error('Failed to load basic schedule:', err);
     }
   };
 
@@ -246,7 +259,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
                 &lt;table class="dataentrytable"&gt; element, then click the button.
               </Typography>
 
-              <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, mt: 3 }}>
                 <Button
                   variant="contained"
                   startIcon={<ContentPaste />}
@@ -272,6 +285,66 @@ const ImportModal: React.FC<ImportModalProps> = ({
                 >
                   📋 Import from Clipboard
                 </Button>
+
+                {/* Basic Schedule Option */}
+                <Box sx={{ 
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  alignItems: 'center', 
+                  gap: 1,
+                  mt: 2,
+                  p: 2,
+                  background: (theme) => theme.palette.mode === 'dark' ? '#1a2330' : '#f8fafc',
+                  borderRadius: '8px',
+                  border: (theme) => theme.palette.mode === 'dark' ? '1px solid #2a3c55' : '1px solid #e5e7eb',
+                  maxWidth: '400px',
+                }}>
+                  <Typography variant="body2" sx={{ 
+                    fontSize: '13px', 
+                    color: 'text.secondary',
+                    textAlign: 'center',
+                    mb: 1
+                  }}>
+                    Having trouble with clipboard? Use our basic schedule instead:
+                  </Typography>
+                  
+                  <Button
+                    variant="outlined"
+                    onClick={handleLoadBasicSchedule}
+                    disabled={isLoading}
+                    sx={{
+                      background: (theme) => theme.palette.mode === 'dark' ? '#0f1622' : '#ffffff',
+                      color: 'text.primary',
+                      border: (theme) => theme.palette.mode === 'dark' ? '1px solid #2a3c55' : '1px solid #d1d5db',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      padding: '8px 16px',
+                      textTransform: 'none',
+                      fontWeight: '500',
+                      '&:hover': {
+                        background: (theme) => theme.palette.mode === 'dark' ? '#1a2532' : '#f3f4f6',
+                      },
+                      '&:disabled': {
+                        background: (theme) => theme.palette.mode === 'dark' ? '#0f1622' : '#ffffff',
+                        color: 'text.disabled',
+                      }
+                    }}
+                  >
+                    📅 Use Basic Schedule
+                  </Button>
+                  
+                  <Typography variant="caption" sx={{ 
+                    fontSize: '11px', 
+                    color: 'text.secondary',
+                    textAlign: 'center',
+                    fontStyle: 'italic',
+                    maxWidth: '350px',
+                    lineHeight: 1.4
+                  }}>
+                    ⚠️ Basic schedule shows course times and locations but not current enrollment data. 
+                    Check the official course search website for up-to-date availability.
+                  </Typography>
+                </Box>
               </Box>
             </Box>
           )}

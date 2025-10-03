@@ -28,7 +28,7 @@ export function colorFor(crn: string): string {
   return `hsl(${x}, 65%, 55%)`;
 }
 
-export function parseHtmlTable(html: string): { courses: Course[]; online: Course[] } {
+export function parseHtmlTable(html: string, isBasicSchedule: boolean = false): { courses: Course[]; online: Course[] } {
   console.log('=== parseHtmlTable START ===');
   
   const parser = new DOMParser();
@@ -147,7 +147,15 @@ export function parseHtmlTable(html: string): { courses: Course[]; online: Cours
     // Enrollment data - lab sections don't have their own enrollment data
     let capacity, actual, remaining, waitCap, waitAct, waitRem;
     
-    if (isContinuation) {
+    if (isBasicSchedule) {
+      // Basic schedule mode: ignore all enrollment data
+      capacity = 0;
+      actual = 0;
+      remaining = 0;
+      waitCap = 0;
+      waitAct = 0;
+      waitRem = 0;
+    } else if (isContinuation) {
       // Lab sections inherit enrollment data from the lecture section
       // They don't have individual enrollment data, so we use the lecture section's data
       capacity = 0;
@@ -202,4 +210,28 @@ export function parseHtmlTable(html: string): { courses: Course[]; online: Cours
   
   console.log(`=== parseHtmlTable END: ${courses.length} scheduled courses, ${online.length} online courses ===`);
   return { courses, online };
+}
+
+export async function loadBasicSchedule(): Promise<string> {
+  try {
+    const response = await fetch('/basic-schedule.html');
+    if (!response.ok) {
+      throw new Error('Failed to load basic schedule');
+    }
+    const html = await response.text();
+    
+    // Extract the table content from the HTML file
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const table = doc.querySelector('table.dataentrytable');
+    
+    if (!table) {
+      throw new Error('No valid schedule table found in basic schedule file');
+    }
+    
+    return table.outerHTML;
+  } catch (error) {
+    console.error('Error loading basic schedule:', error);
+    throw new Error('Failed to load basic schedule. Please try the live import instead.');
+  }
 }
