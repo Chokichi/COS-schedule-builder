@@ -32,6 +32,53 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
   // State for cycling through overlapping courses
   const [overlappingGroups, setOverlappingGroups] = useState<{ [key: string]: { courses: Course[], currentIndex: number } }>({});
   
+  // Mobile tooltip state
+  const [openTooltip, setOpenTooltip] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Mobile detection
+  React.useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth <= 768 || 'ontouchstart' in window);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Handle tooltip open/close for mobile
+  const handleTooltipToggle = useCallback((courseKey: string) => {
+    if (isMobile) {
+      setOpenTooltip(prev => prev === courseKey ? null : courseKey);
+    }
+  }, [isMobile]);
+
+  // Close tooltip when clicking outside (mobile only)
+  React.useEffect(() => {
+    if (!isMobile || !openTooltip) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element;
+      // Don't close if clicking on a tooltip or course card
+      if (!target.closest('.MuiTooltip-popper') && !target.closest('.course-slot')) {
+        setOpenTooltip(null);
+      }
+    };
+
+    const handleScroll = () => {
+      // Don't close tooltip on scroll - let users scroll while tooltip is open
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('scroll', handleScroll, true);
+    
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('scroll', handleScroll, true);
+    };
+  }, [isMobile, openTooltip]);
+  
   const filteredCourses = useMemo(() => {
     // If this is "My Schedule", show all courses without any filtering
     if (isMySchedule) {
@@ -308,6 +355,9 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
     // The currentIndex is used for which course appears on top in the tooltip
     // but all courses should be visible as stacked cards
     
+    const courseKey = `${course.CRN}-${day}-${course.StartMin}-${course.EndMin}`;
+    const isTooltipOpen = isMobile ? openTooltip === courseKey : undefined;
+
     return (
       <Tooltip
         key={`${course.CRN}-${day}-${course.StartMin}-${course.EndMin}-${course.Location}-${course.Instructor || 'TBA'}-${course.isLabSection ? 'lab' : 'lecture'}-${index}-${overlappingGroup ? overlappingGroup.currentIndex : 0}`}
@@ -367,10 +417,12 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
           </Box>
         }
         arrow
-        enterDelay={400}
-        leaveDelay={400}
-        enterNextDelay={400}
-        disableHoverListener={false}
+        open={isTooltipOpen}
+        enterDelay={isMobile ? 0 : 400}
+        leaveDelay={isMobile ? 0 : 400}
+        enterNextDelay={isMobile ? 0 : 400}
+        disableHoverListener={isMobile}
+        disableTouchListener={false}
         PopperProps={{
           style: { zIndex: 9999 },
         }}
@@ -378,6 +430,7 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
         <Paper
           className="course-slot"
           elevation={0}
+          onClick={() => isMobile && handleTooltipToggle(courseKey)}
           sx={{
             position: 'absolute',
             left: '6px',
@@ -404,6 +457,12 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
               transform: 'translateY(-1px)',
               boxShadow: '0 6px 16px rgba(0,0,0,0.3)',
             },
+            ...(isMobile && {
+              cursor: 'pointer',
+              '&:active': {
+                transform: 'scale(0.98)',
+              },
+            }),
           }}
         >
           {/* Overlapping indicator */}
