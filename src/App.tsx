@@ -380,29 +380,6 @@ function App() {
     console.log('❌ Saved data discarded');
   }, [clearLocalStorage]);
 
-  const handleLoadBasicSchedule = useCallback(async () => {
-    console.log('🔄 Loading basic schedule...');
-    setAppState(prev => ({ 
-      ...prev, 
-      isLoading: true, 
-      error: null,
-      importProgress: 0,
-      importProgressText: 'Loading basic schedule...'
-    }));
-
-    try {
-      const html = await loadBasicSchedule();
-      await handleParseHtml(html, true); // true = isBasicSchedule
-    } catch (error) {
-      console.error('Failed to load basic schedule:', error);
-      setAppState(prev => ({ 
-        ...prev, 
-        isLoading: false, 
-        error: error instanceof Error ? error.message : 'Failed to load basic schedule'
-      }));
-    }
-  }, []);
-
   const handleParseHtml = useCallback(async (html: string, isBasicSchedule: boolean = false) => {
     const startTime = Date.now();
     console.log('🚀 Import started at:', new Date().toLocaleTimeString());
@@ -567,6 +544,29 @@ function App() {
       }));
     }
   }, []);
+
+  const handleLoadBasicSchedule = useCallback(async () => {
+    console.log('🔄 Loading basic schedule...');
+    setAppState(prev => ({ 
+      ...prev, 
+      isLoading: true, 
+      error: null,
+      importProgress: 0,
+      importProgressText: 'Loading basic schedule...'
+    }));
+
+    try {
+      const html = await loadBasicSchedule();
+      await handleParseHtml(html, true); // true = isBasicSchedule
+    } catch (error) {
+      console.error('Failed to load basic schedule:', error);
+      setAppState(prev => ({ 
+        ...prev, 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : 'Failed to load basic schedule'
+      }));
+    }
+  }, [handleParseHtml]);
 
   const handleFilterChange = useCallback((newFilters: Partial<FilterState>) => {
     setAppState(prev => ({
