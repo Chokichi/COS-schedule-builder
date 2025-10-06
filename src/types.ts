@@ -20,6 +20,15 @@ export interface Course {
   __color: string;
   __bg: string;
   isLabSection?: boolean;
+  isCustomBlock?: boolean;
+}
+
+export interface CustomTimeBlock {
+  id: string;
+  title: string;
+  days: string[];
+  times: { [key: string]: { start: string; end: string } };
+  color: string;
 }
 
 export interface FilterState {
@@ -44,6 +53,7 @@ export interface AppState {
   onlineCourses: Course[];
   mySchedule: Course[];
   myOnlineClasses: Course[];
+  customBlocks: CustomTimeBlock[];
   subjects: Set<string>;
   courses: Set<string>;
   instructors: Set<string>;

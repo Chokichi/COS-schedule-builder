@@ -6,14 +6,16 @@ import {
   Tooltip,
   Paper,
 } from '@mui/material';
-import { Course, FilterState, DAYS, DAY_LABELS, PX_PER_HOUR, DAY_START_MIN, DAY_END_MIN } from '../types';
+import { Course, FilterState, CustomTimeBlock, DAYS, DAY_LABELS, PX_PER_HOUR, DAY_START_MIN, DAY_END_MIN } from '../types';
 
 interface ScheduleGridProps {
   courses: Course[];
   mySchedule: Course[];
+  customBlocks?: CustomTimeBlock[];
   filters: FilterState;
   onAddCourse: (crn: string) => void;
   onRemoveCourse: (crn: string) => void;
+  onEditCustomBlock?: (blockId: string) => void;
   isMySchedule?: boolean;
   courseOpacity?: number;
   sharedTimeRange?: { startMin: number; endMin: number };
@@ -22,9 +24,11 @@ interface ScheduleGridProps {
 const ScheduleGrid: React.FC<ScheduleGridProps> = ({
   courses,
   mySchedule,
+  customBlocks = [],
   filters,
   onAddCourse,
   onRemoveCourse,
+  onEditCustomBlock,
   isMySchedule = false,
   courseOpacity = 0.6,
   sharedTimeRange,
@@ -35,6 +39,67 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
   // Mobile tooltip state
   const [openTooltip, setOpenTooltip] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
+
+  // Convert custom blocks to course-like objects for display
+  const customBlockCourses = useMemo(() => {
+    const result: Course[] = [];
+    
+    customBlocks.forEach(block => {
+      block.days.forEach(day => {
+        const dayMap: { [key: string]: string } = {
+          'Monday': 'M',
+          'Tuesday': 'T', 
+          'Wednesday': 'W',
+          'Thursday': 'R',
+          'Friday': 'F'
+        };
+        
+        const dayCode = dayMap[day];
+        if (dayCode && block.times[day]) {
+          const { start, end } = block.times[day];
+          
+          // Convert time strings to minutes
+          const timeToMinutes = (timeStr: string): number => {
+            const [time, period] = timeStr.split(' ');
+            const [hours, minutes] = time.split(':').map(Number);
+            let totalMinutes = hours * 60 + minutes;
+            if (period === 'PM' && hours !== 12) totalMinutes += 12 * 60;
+            if (period === 'AM' && hours === 12) totalMinutes -= 12 * 60;
+            return totalMinutes;
+          };
+          
+          const startMin = timeToMinutes(start);
+          const endMin = timeToMinutes(end);
+          
+          result.push({
+            CRN: block.id,
+            Subject: 'Custom',
+            Course: 'Block',
+            Title: block.title,
+            Instructor: 'Custom',
+            Days: dayCode,
+            DispTime: `${start} - ${end}`,
+            StartMin: startMin,
+            EndMin: endMin,
+            Units: 0,
+            Campus: 'Custom',
+            Location: 'Custom',
+            Capacity: 0,
+            Actual: 0,
+            Remaining: 0,
+            WaitCap: 0,
+            WaitAct: 0,
+            WaitRem: 0,
+            __color: block.color,
+            __bg: block.color.replace(/^hsl\(([^)]+)\)$/, 'hsla($1, 0.22)'),
+            isCustomBlock: true
+          });
+        }
+      });
+    });
+    
+    return result;
+  }, [customBlocks]);
 
   // Mobile detection
   React.useEffect(() => {
@@ -80,9 +145,9 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
   }, [isMobile, openTooltip]);
   
   const filteredCourses = useMemo(() => {
-    // If this is "My Schedule", show all courses without any filtering
+    // If this is "My Schedule", show all courses plus custom blocks
     if (isMySchedule) {
-      return courses;
+      return [...courses, ...customBlockCourses];
     }
     
     // Debug logging
@@ -160,7 +225,7 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
     
     console.log(`Final result: ${filtered.length} courses after filtering`);
     return filtered;
-  }, [courses, mySchedule, filters, isMySchedule]);
+  }, [courses, customBlockCourses, mySchedule, filters, isMySchedule]);
 
   // Use shared time range if provided, otherwise calculate from filtered courses
   const timeRange = useMemo(() => {
@@ -363,21 +428,37 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
         key={`${course.CRN}-${day}-${course.StartMin}-${course.EndMin}-${course.Location}-${course.Instructor || 'TBA'}-${course.isLabSection ? 'lab' : 'lecture'}-${index}-${overlappingGroup ? overlappingGroup.currentIndex : 0}`}
         title={
           <Box>
-            <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-              {course.Subject} {course.Course}
-            </Typography>
-            <Typography variant="body2" sx={{ mt: 0.5 }}>
-              {course.Title}
-            </Typography>
-            <Typography variant="body2" sx={{ mt: 0.5 }}>
-              CRN: {course.CRN} • {course.Instructor || 'TBA'}
-            </Typography>
-            <Typography variant="body2">
-              {course.Location} • {course.Campus}
-            </Typography>
-            <Typography variant="body2">
-              {course.Days} {course.DispTime}
-            </Typography>
+            {course.isCustomBlock ? (
+              <>
+                <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+                  {course.Title}
+                </Typography>
+                <Typography variant="body2" sx={{ mt: 0.5 }}>
+                  Custom Time Block
+                </Typography>
+                <Typography variant="body2">
+                  {course.Days} {course.DispTime}
+                </Typography>
+              </>
+            ) : (
+              <>
+                <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+                  {course.Subject} {course.Course}
+                </Typography>
+                <Typography variant="body2" sx={{ mt: 0.5 }}>
+                  {course.Title}
+                </Typography>
+                <Typography variant="body2" sx={{ mt: 0.5 }}>
+                  CRN: {course.CRN} • {course.Instructor || 'TBA'}
+                </Typography>
+                <Typography variant="body2">
+                  {course.Location} • {course.Campus}
+                </Typography>
+                <Typography variant="body2">
+                  {course.Days} {course.DispTime}
+                </Typography>
+              </>
+            )}
             {isOverlapping && (
               <>
                 <Typography variant="body2" sx={{ mt: 1, fontWeight: 'bold', color: 'primary.main' }}>
@@ -406,7 +487,7 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
                       transition: 'all 0.2s ease',
                     }}
                   >
-                    {idx + 1}. {overlappingCourse.Subject} {overlappingCourse.Course} - {overlappingCourse.Instructor || 'TBA'}
+                    {idx + 1}. {overlappingCourse.isCustomBlock ? overlappingCourse.Title : `${overlappingCourse.Subject} ${overlappingCourse.Course}`} - {overlappingCourse.isCustomBlock ? 'Custom Block' : (overlappingCourse.Instructor || 'TBA')}
                   </Box>
                 ))}
                 <Typography variant="caption" sx={{ mt: 1, display: 'block', fontStyle: 'italic' }}>
@@ -482,35 +563,37 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
           )}
           
           <Box sx={{ position: 'relative', height: '100%', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-            {/* Course Title */}
+            {/* Course Title - or Custom Block Title */}
             <Typography
               variant="caption"
               sx={{
                 fontWeight: 'bold',
-                fontSize: '12px',
+                fontSize: course.isCustomBlock ? '11px' : '12px',
                 display: 'block',
                 lineHeight: 1.2,
                 marginBottom: '2px',
               }}
             >
-              {course.Subject} {course.Course}
+              {course.isCustomBlock ? course.Title : `${course.Subject} ${course.Course}`}
             </Typography>
             
-            {/* CRN Tag */}
-            <Box
-              sx={{
-                display: 'inline-block',
-                fontSize: '8px',
-                padding: '1px 4px',
-                borderRadius: '6px',
-                border: '1px solid rgba(255,255,255,0.2)',
-                background: 'rgba(255,255,255,0.1)',
-                alignSelf: 'flex-start',
-                marginBottom: '2px',
-              }}
-            >
-              {course.CRN}
-            </Box>
+            {/* CRN Tag - only for regular courses */}
+            {!course.isCustomBlock && (
+              <Box
+                sx={{
+                  display: 'inline-block',
+                  fontSize: '8px',
+                  padding: '1px 4px',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  background: 'rgba(255,255,255,0.1)',
+                  alignSelf: 'flex-start',
+                  marginBottom: '2px',
+                }}
+              >
+                {course.CRN}
+              </Box>
+            )}
             
             {/* Time */}
             <Typography
@@ -569,43 +652,83 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
               </Box>
             )}
             
-            {/* Add/Remove Button */}
-            <Button
-              size="small"
-              variant="contained"
-              sx={{
-                position: 'absolute',
-                bottom: '3px',
-                right: '3px',
-                minWidth: 'auto',
-                width: 'auto',
-                height: 'auto',
-                padding: '2px 6px',
-                fontSize: '9px',
-                background: isMySchedule ? '#dc3545' : '#059669',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                textTransform: 'none',
-                fontWeight: 600,
-                boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-                '&:hover': {
-                  background: isMySchedule ? '#c82333' : '#048a5a',
-                  transform: 'translateY(-1px)',
-                  boxShadow: '0 3px 6px rgba(0,0,0,0.3)',
-                }
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (isMySchedule) {
-                  onRemoveCourse(course.CRN);
-                } else {
-                  onAddCourse(course.CRN);
-                }
-              }}
-            >
-              {isMySchedule ? 'Remove' : 'Add'}
-            </Button>
+            {/* Add/Remove Button - only for regular courses, not custom blocks */}
+            {!course.isCustomBlock && (
+              <Button
+                size="small"
+                variant="contained"
+                sx={{
+                  position: 'absolute',
+                  bottom: '3px',
+                  right: '3px',
+                  minWidth: 'auto',
+                  width: 'auto',
+                  height: 'auto',
+                  padding: '2px 6px',
+                  fontSize: '9px',
+                  background: isMySchedule ? '#dc3545' : '#059669',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                  '&:hover': {
+                    background: isMySchedule ? '#c82333' : '#048a5a',
+                    transform: 'translateY(-1px)',
+                    boxShadow: '0 3px 6px rgba(0,0,0,0.3)',
+                  }
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isMySchedule) {
+                    onRemoveCourse(course.CRN);
+                  } else {
+                    onAddCourse(course.CRN);
+                  }
+                }}
+              >
+                {isMySchedule ? 'Remove' : 'Add'}
+              </Button>
+            )}
+
+            {/* Edit Button - only for custom blocks */}
+            {course.isCustomBlock && (
+              <Button
+                size="small"
+                variant="contained"
+                sx={{
+                  position: 'absolute',
+                  bottom: '3px',
+                  right: '3px',
+                  minWidth: 'auto',
+                  width: 'auto',
+                  height: 'auto',
+                  padding: '2px 6px',
+                  fontSize: '9px',
+                  background: '#6c757d',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                  '&:hover': {
+                    background: '#5a6268',
+                    transform: 'translateY(-1px)',
+                    boxShadow: '0 3px 6px rgba(0,0,0,0.3)',
+                  }
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onEditCustomBlock) {
+                    onEditCustomBlock(course.CRN);
+                  }
+                }}
+              >
+                Edit
+              </Button>
+            )}
           </Box>
         </Paper>
       </Tooltip>

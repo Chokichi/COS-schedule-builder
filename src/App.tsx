@@ -11,11 +11,14 @@ import {
   DialogContent,
   DialogActions,
 } from '@mui/material';
-import { AppState, FilterState, SubjectData } from './types';
+import { AppState, FilterState, SubjectData, CustomTimeBlock } from './types';
 import FilterPanel from './components/FilterPanel';
 import ScheduleGrid from './components/ScheduleGrid';
 import OnlineCoursesList from './components/OnlineCoursesList';
 import ImportModal from './components/ImportModal';
+import SaveModal from './components/SaveModal';
+import LoadModal from './components/LoadModal';
+import CustomBlockModal from './components/CustomBlockModal';
 import { parseHtmlTable, loadBasicSchedule } from './utils/parser';
 
 const lightTheme = createTheme({
@@ -119,6 +122,7 @@ const initialAppState: AppState = {
   onlineCourses: [],
   mySchedule: [],
   myOnlineClasses: [],
+  customBlocks: [],
   subjects: new Set(),
   courses: new Set(),
   instructors: new Set(),
@@ -135,6 +139,10 @@ function App() {
   const [appState, setAppState] = useState<AppState>(initialAppState);
   const [isLightMode, setIsLightMode] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [saveModalOpen, setSaveModalOpen] = useState(false);
+  const [loadModalOpen, setLoadModalOpen] = useState(false);
+  const [customBlockModalOpen, setCustomBlockModalOpen] = useState(false);
+  const [editingCustomBlock, setEditingCustomBlock] = useState<CustomTimeBlock | null>(null);
   const [showRestorePrompt, setShowRestorePrompt] = useState(false);
   const [courseOpacity, setCourseOpacity] = useState(0.6);
   const [showOpacityMenu, setShowOpacityMenu] = useState(false);
@@ -255,11 +263,13 @@ function App() {
           showFullClasses: appState.filters.showFullClasses,
           showFullWaitlist: appState.filters.showFullWaitlist,
         },
+        customBlocks: appState.customBlocks,
         isLightMode,
         timestamp: Date.now(),
       };
       localStorage.setItem('ssb_data', JSON.stringify(dataToSave));
       console.log('💾 Data saved to local storage');
+      console.log('💾 Custom blocks saved:', dataToSave.customBlocks?.length || 0);
     } catch (error) {
       console.error('Failed to save to local storage:', error);
     }
@@ -274,6 +284,7 @@ function App() {
         console.log('🔍 Parsed data keys:', Object.keys(data));
         console.log('🔍 Data timestamp:', data.timestamp);
         console.log('🔍 All courses length:', data.allCourses?.length);
+        console.log('🔍 Custom blocks length:', data.customBlocks?.length);
         
         // Check if data is recent (within 7 days)
         const isRecent = data.timestamp && (Date.now() - data.timestamp) < (7 * 24 * 60 * 60 * 1000);
@@ -309,6 +320,7 @@ function App() {
               showFullClasses: data.filters?.showFullClasses || false,
               showFullWaitlist: data.filters?.showFullWaitlist || false,
             },
+            customBlocks: data.customBlocks || [],
             isLightMode: data.isLightMode || false,
           };
         }
@@ -375,6 +387,7 @@ function App() {
         onlineCourses: savedData.onlineCourses,
         mySchedule: savedData.mySchedule,
         myOnlineClasses: savedData.myOnlineClasses,
+        customBlocks: (savedData as any).customBlocks || [],
         subjects: savedData.subjects,
         courses: savedData.courses,
         instructors: savedData.instructors,
@@ -385,6 +398,7 @@ function App() {
       setIsLightMode(savedData.isLightMode);
       setShowRestorePrompt(false);
       console.log('🔄 Data restored from local storage');
+      console.log('🔄 Custom blocks restored:', (savedData as any).customBlocks?.length || 0);
     }
   }, [loadFromLocalStorage]);
 
@@ -582,6 +596,176 @@ function App() {
     }
   }, [handleParseHtml]);
 
+  const handleSaveSchedule = useCallback(() => {
+    setSaveModalOpen(true);
+  }, []);
+
+  const handleLoadSchedule = useCallback(() => {
+    setLoadModalOpen(true);
+  }, []);
+
+  const handleCreateCustomBlock = useCallback(() => {
+    setEditingCustomBlock(null);
+    setCustomBlockModalOpen(true);
+  }, []);
+
+  const handleEditCustomBlock = useCallback((blockId: string) => {
+    const block = appState.customBlocks.find(b => b.id === blockId);
+    if (block) {
+      setEditingCustomBlock(block);
+      setCustomBlockModalOpen(true);
+    }
+  }, [appState.customBlocks]);
+
+  const handleSaveCustomBlock = useCallback((block: CustomTimeBlock) => {
+    setAppState(prev => ({
+      ...prev,
+      customBlocks: editingCustomBlock 
+        ? prev.customBlocks.map(b => b.id === block.id ? block : b)
+        : [...prev.customBlocks, block]
+    }));
+  }, [editingCustomBlock]);
+
+  const handleDeleteCustomBlock = useCallback((blockId: string) => {
+    setAppState(prev => ({
+      ...prev,
+      customBlocks: prev.customBlocks.filter(b => b.id !== blockId)
+    }));
+  }, []);
+
+  const handleLoadEncodedSchedule = useCallback(async (encodedString: string) => {
+    setAppState(prev => ({ 
+      ...prev, 
+      isLoading: true, 
+      error: null,
+      importProgress: 0,
+      importProgressText: 'Decoding schedule data...'
+    }));
+
+    try {
+      const { decodeScheduleData } = await import('./utils/parser');
+      const decodedData = decodeScheduleData(encodedString);
+      
+      if (!decodedData) {
+        throw new Error('Invalid encoded schedule data');
+      }
+
+      setAppState(prev => ({ 
+        ...prev, 
+        importProgress: 50,
+        importProgressText: 'Looking up courses from available schedule...'
+      }));
+
+      // Look up courses from available courses with better matching
+      const regularCourses: any[] = [];
+      const missingRegular: string[] = [];
+
+      for (const courseData of decodedData.c) {
+        if (Array.isArray(courseData) && courseData.length >= 6) {
+          // New format: [CRN, Subject, Course, Days, StartMin, EndMin]
+          const [crn, subject, course, days, startMin, endMin] = courseData;
+          
+          // Find all courses that match this identifier
+          const matchingCourses = appState.allCourses.filter(availableCourse => 
+            availableCourse.CRN === crn &&
+            availableCourse.Subject === subject &&
+            availableCourse.Course === course &&
+            availableCourse.Days === days &&
+            availableCourse.StartMin === startMin &&
+            availableCourse.EndMin === endMin
+          );
+          
+          if (matchingCourses.length > 0) {
+            regularCourses.push(...matchingCourses);
+          } else {
+            missingRegular.push(`${subject} ${course} (${crn})`);
+          }
+        } else if (typeof courseData === 'string') {
+          // Old format: just CRN string
+          const matchingCourses = appState.allCourses.filter(course => course.CRN === courseData);
+          if (matchingCourses.length > 0) {
+            regularCourses.push(...matchingCourses);
+          } else {
+            missingRegular.push(courseData);
+          }
+        }
+      }
+
+      const onlineCourses: any[] = [];
+      const missingOnline: string[] = [];
+
+      for (const courseData of decodedData.o) {
+        if (Array.isArray(courseData) && courseData.length >= 3) {
+          // New format: [CRN, Subject, Course]
+          const [crn, subject, course] = courseData;
+          
+          const matchingCourses = appState.onlineCourses.filter(availableCourse => 
+            availableCourse.CRN === crn &&
+            availableCourse.Subject === subject &&
+            availableCourse.Course === course
+          );
+          
+          if (matchingCourses.length > 0) {
+            onlineCourses.push(...matchingCourses);
+          } else {
+            missingOnline.push(`${subject} ${course} (${crn})`);
+          }
+        } else if (typeof courseData === 'string') {
+          // Old format: just CRN string
+          const matchingCourses = appState.onlineCourses.filter(course => course.CRN === courseData);
+          if (matchingCourses.length > 0) {
+            onlineCourses.push(...matchingCourses);
+          } else {
+            missingOnline.push(courseData);
+          }
+        }
+      }
+
+      if (missingRegular.length > 0 || missingOnline.length > 0) {
+        const missing = [...missingRegular, ...missingOnline];
+        throw new Error(`Some courses not found in available schedule: ${missing.join(', ')}. Please make sure you have loaded the correct available courses first.`);
+      }
+
+      // Convert custom blocks from encoded format
+      const customBlocks = decodedData.b ? decodedData.b.map((blockArray: any[]) => ({
+        id: blockArray[0],
+        title: blockArray[1],
+        days: blockArray[2],
+        times: blockArray[3],
+        color: blockArray[4]
+      })) : [];
+
+      // Restore the schedule data
+      setAppState(prev => ({
+        ...prev,
+        mySchedule: regularCourses,
+        myOnlineClasses: onlineCourses,
+        customBlocks: customBlocks,
+        isLoading: false,
+        importProgress: 100,
+        importProgressText: 'Schedule restored successfully!'
+      }));
+
+      // Clear progress after a short delay
+      setTimeout(() => {
+        setAppState(prev => ({ 
+          ...prev, 
+          importProgress: 0,
+          importProgressText: ''
+        }));
+      }, 2000);
+
+    } catch (error) {
+      console.error('Failed to load encoded schedule:', error);
+      setAppState(prev => ({ 
+        ...prev, 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : 'Failed to load encoded schedule'
+      }));
+    }
+  }, [appState.allCourses, appState.onlineCourses]);
+
+
   const handleFilterChange = useCallback((newFilters: Partial<FilterState>) => {
     setAppState(prev => ({
       ...prev,
@@ -659,13 +843,62 @@ function App() {
     }));
   }, []);
 
-  const handlePrintSchedule = useCallback(() => {
+  const handlePrintSchedule = useCallback(async () => {
     if (appState.mySchedule.length === 0 && appState.myOnlineClasses.length === 0) {
       alert('No courses in your schedule to print');
       return;
     }
 
     // Use the component-level totalUnits calculation
+
+    // Generate encoded string for sharing
+    const generateEncodedString = () => {
+      const scheduleData = {
+        v: '1.0',
+        t: 'ssb',
+        ts: Date.now(),
+        c: appState.mySchedule.map(course => [
+          course.CRN,
+          course.Subject,
+          course.Course,
+          course.Days,
+          course.StartMin,
+          course.EndMin
+        ]),
+        o: appState.myOnlineClasses.map(course => [
+          course.CRN,
+          course.Subject,
+          course.Course
+        ]),
+        b: appState.customBlocks.map(block => [
+          block.id,
+          block.title,
+          block.days,
+          block.times,
+          block.color
+        ])
+      };
+      const jsonString = JSON.stringify(scheduleData);
+      return btoa(unescape(encodeURIComponent(jsonString)));
+    };
+
+    const encodedString = generateEncodedString();
+
+    // Generate QR code
+    let qrCodeDataUrl = '';
+    try {
+      const QRCode = (await import('qrcode')).default;
+      qrCodeDataUrl = await QRCode.toDataURL(encodedString, { 
+        width: 200,
+        margin: 2,
+        color: {
+          dark: '#000000',
+          light: '#FFFFFF'
+        }
+      });
+    } catch (error) {
+      console.error('Failed to generate QR code:', error);
+    }
 
     // Calculate dynamic time range based on my schedule
     const calculateTimeRange = () => {
@@ -835,6 +1068,33 @@ function App() {
             </tbody>
           </table>
         </div>
+        
+        <div class="sharing-section" style="margin-top: 40px; page-break-before: always; text-align: center;">
+          <h2>Share This Schedule</h2>
+          <p style="margin-bottom: 20px; color: #666;">
+            Scan the QR code below or copy the encoded string to share this schedule with others.
+          </p>
+          
+          ${qrCodeDataUrl ? `
+            <div style="margin: 20px 0;">
+              <img src="${qrCodeDataUrl}" alt="Schedule QR Code" style="border: 1px solid #ccc; padding: 10px; background: white;" />
+            </div>
+          ` : ''}
+          
+          <div style="margin: 20px 0; padding: 15px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 5px;">
+            <h3 style="margin: 0 0 10px 0; font-size: 16px; color: #495057;">Encoded Schedule String:</h3>
+            <div style="background: white; padding: 10px; border: 1px solid #ccc; border-radius: 3px; font-family: monospace; font-size: 12px; word-break: break-all; text-align: left; max-height: 200px; overflow-y: auto;">
+              ${encodedString}
+            </div>
+            <p style="margin: 10px 0 0 0; font-size: 12px; color: #6c757d;">
+              Copy this string and use the "Load" button in the schedule builder to restore this schedule.
+            </p>
+          </div>
+          
+          <div style="margin-top: 20px; padding: 10px; background: #e7f3ff; border: 1px solid #b3d9ff; border-radius: 5px; font-size: 14px; color: #0066cc;">
+            <strong>Instructions:</strong> To load this schedule, first import the available courses using the "Import Schedule" button, then use the "Load" button and paste the encoded string above.
+          </div>
+        </div>
       </body>
       </html>
     `;
@@ -851,7 +1111,7 @@ function App() {
         printWindow.close();
       };
     }
-  }, [appState.mySchedule, appState.myOnlineClasses]);
+  }, [appState.mySchedule, appState.myOnlineClasses, totalUnits]);
 
 
   const currentTheme = isLightMode ? lightTheme : darkTheme;
@@ -1110,9 +1370,11 @@ function App() {
               <ScheduleGrid
                 courses={appState.allCourses}
                 mySchedule={appState.mySchedule}
+                customBlocks={appState.customBlocks}
                 filters={appState.filters}
                 onAddCourse={handleAddCourse}
                 onRemoveCourse={handleRemoveCourse}
+                onEditCustomBlock={handleEditCustomBlock}
                 courseOpacity={courseOpacity}
                 sharedTimeRange={sharedTimeRange}
               />
@@ -1180,29 +1442,81 @@ function App() {
                 }}>
                   {totalUnits} Units
                 </Typography>
-                <Button
-                  variant="contained"
-                  size="small"
-                  onClick={handlePrintSchedule}
-                  sx={{
-                    background: 'primary.main',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '6px',
-                    padding: '6px 12px',
-                    fontSize: '12px',
-                    textTransform: 'none'
-                  }}
-                >
-                  🖨️ Print Schedule
-                </Button>
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                  <Button
+                    variant="contained"
+                    size="small"
+                    onClick={handleCreateCustomBlock}
+                    sx={{
+                      background: 'warning.main',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '6px 12px',
+                      fontSize: '12px',
+                      textTransform: 'none'
+                    }}
+                  >
+                    ➕ Create
+                  </Button>
+                  <Button
+                    variant="contained"
+                    size="small"
+                    onClick={handleSaveSchedule}
+                    sx={{
+                      background: 'secondary.main',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '6px 12px',
+                      fontSize: '12px',
+                      textTransform: 'none'
+                    }}
+                  >
+                    💾 Save
+                  </Button>
+                  <Button
+                    variant="contained"
+                    size="small"
+                    onClick={handleLoadSchedule}
+                    sx={{
+                      background: 'success.main',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '6px 12px',
+                      fontSize: '12px',
+                      textTransform: 'none'
+                    }}
+                  >
+                    📂 Load
+                  </Button>
+                  <Button
+                    variant="contained"
+                    size="small"
+                    onClick={handlePrintSchedule}
+                    sx={{
+                      background: 'primary.main',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '6px 12px',
+                      fontSize: '12px',
+                      textTransform: 'none'
+                    }}
+                  >
+                    🖨️ Print Schedule
+                  </Button>
+                </Box>
               </Box>
               <ScheduleGrid
                 courses={appState.mySchedule}
                 mySchedule={appState.mySchedule}
+                customBlocks={appState.customBlocks}
                 filters={appState.filters}
                 onAddCourse={handleAddCourse}
                 onRemoveCourse={handleRemoveCourse}
+                onEditCustomBlock={handleEditCustomBlock}
                 isMySchedule={true}
                 sharedTimeRange={sharedTimeRange}
               />
@@ -1261,6 +1575,34 @@ function App() {
           onSubjectToggle={(subject) => handleFilterChange({ subjectAllow: new Set([...appState.filters.subjectAllow].includes(subject) ? [...appState.filters.subjectAllow].filter(s => s !== subject) : [...appState.filters.subjectAllow, subject]) })}
           parsedData={appState.allCourses}
         />
+
+      {/* Save Modal */}
+      <SaveModal
+        open={saveModalOpen}
+        onClose={() => setSaveModalOpen(false)}
+        mySchedule={appState.mySchedule}
+        myOnlineClasses={appState.myOnlineClasses}
+        customBlocks={appState.customBlocks}
+      />
+
+      {/* Load Modal */}
+      <LoadModal
+        open={loadModalOpen}
+        onClose={() => setLoadModalOpen(false)}
+        onLoadSchedule={handleLoadEncodedSchedule}
+      />
+
+      {/* Custom Block Modal */}
+      <CustomBlockModal
+        open={customBlockModalOpen}
+        onClose={() => {
+          setCustomBlockModalOpen(false);
+          setEditingCustomBlock(null);
+        }}
+        onSave={handleSaveCustomBlock}
+        onDelete={handleDeleteCustomBlock}
+        editingBlock={editingCustomBlock}
+      />
 
       {/* Restore Data Prompt */}
       <Dialog

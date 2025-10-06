@@ -235,3 +235,35 @@ export async function loadBasicSchedule(): Promise<string> {
     throw new Error('Failed to load basic schedule. Please try the live import instead.');
   }
 }
+
+// Check if a string is encoded schedule data
+export function isEncodedScheduleData(text: string): boolean {
+  try {
+    // Try to decode and check for SSB type
+    const jsonString = decodeURIComponent(escape(atob(text)));
+    const data = JSON.parse(jsonString);
+    return data.t === 'ssb';
+  } catch (error) {
+    return false;
+  }
+}
+
+// Decode compact schedule data
+export function decodeScheduleData(encodedString: string): { c: any[], o: any[], b?: any[] } | null {
+  try {
+    // Simple base64 decoding without compression
+    const jsonString = decodeURIComponent(escape(atob(encodedString)));
+    const data = JSON.parse(jsonString);
+    
+    // Check if it's a valid SSB schedule
+    if (data.t !== 'ssb') {
+      throw new Error('Invalid schedule data format');
+    }
+    
+    // Return course identifiers and custom blocks - courses will be matched from available courses
+    return { c: data.c, o: data.o, b: data.b || [] };
+  } catch (error) {
+    console.error('Error decoding schedule data:', error);
+    return null;
+  }
+}

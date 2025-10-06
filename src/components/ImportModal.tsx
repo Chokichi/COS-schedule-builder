@@ -78,6 +78,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
     }
   };
 
+
   const handleCompleteImport = () => {
     if (selectedSubjects.size === 0) {
       alert('Please select at least one subject before continuing.');
@@ -332,6 +333,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
                   >
                     📅 Use Basic Schedule
                   </Button>
+
                   
                   <Typography variant="caption" sx={{ 
                     fontSize: '11px', 
