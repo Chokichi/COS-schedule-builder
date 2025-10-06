@@ -211,6 +211,20 @@ function App() {
     }
   }, [appState.allCourses, appState.mySchedule, appState.filters]);
 
+  // Calculate total units for display
+  const calculateTotalUnits = useCallback(() => {
+    let totalUnits = 0;
+    appState.mySchedule.forEach(course => {
+      if (course.Units > 0) totalUnits += course.Units;
+    });
+    appState.myOnlineClasses.forEach(course => {
+      if (course.Units > 0) totalUnits += course.Units;
+    });
+    return totalUnits;
+  }, [appState.mySchedule, appState.myOnlineClasses]);
+
+  const totalUnits = calculateTotalUnits();
+
   // Local storage functions
   const saveToLocalStorage = useCallback(() => {
     try {
@@ -651,19 +665,7 @@ function App() {
       return;
     }
 
-    // Calculate total units
-    const calculateTotalUnits = () => {
-      let totalUnits = 0;
-      appState.mySchedule.forEach(course => {
-        if (course.Units > 0) totalUnits += course.Units;
-      });
-      appState.myOnlineClasses.forEach(course => {
-        if (course.Units > 0) totalUnits += course.Units;
-      });
-      return totalUnits;
-    };
-
-    const totalUnits = calculateTotalUnits();
+    // Use the component-level totalUnits calculation
 
     // Calculate dynamic time range based on my schedule
     const calculateTimeRange = () => {
@@ -1163,6 +1165,20 @@ function App() {
                   color: 'text.secondary'
                 }}>
                   ✅ My Schedule
+                </Typography>
+                <Typography variant="body2" sx={{
+                  margin: '0 8px 8px 8px',
+                  fontSize: '14px',
+                  fontWeight: 'bold',
+                  color: 'white',
+                  background: 'primary.main',
+                  border: 'none',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  display: 'inline-block',
+                  textTransform: 'none'
+                }}>
+                  {totalUnits} Units
                 </Typography>
                 <Button
                   variant="contained"
