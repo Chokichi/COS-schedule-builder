@@ -10,10 +10,8 @@ import {
   TextField,
   IconButton,
   Alert,
-  Paper,
-  Divider
 } from '@mui/material';
-import { Close, ContentPaste, Check } from '@mui/icons-material';
+import { Close, ContentPaste } from '@mui/icons-material';
 
 interface LoadModalProps {
   open: boolean;
@@ -23,7 +21,6 @@ interface LoadModalProps {
 
 const LoadModal: React.FC<LoadModalProps> = ({ open, onClose, onLoadSchedule }) => {
   const [encodedString, setEncodedString] = useState<string>('');
-  const [copied, setCopied] = useState<boolean>(false);
 
   const handlePasteFromClipboard = async () => {
     try {

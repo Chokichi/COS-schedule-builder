@@ -18,7 +18,7 @@ import {
   Checkbox,
   Divider
 } from '@mui/material';
-import { Close, Add, Delete } from '@mui/icons-material';
+import { Close, Delete } from '@mui/icons-material';
 
 interface CustomBlockModalProps {
   open: boolean;

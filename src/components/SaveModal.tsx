@@ -15,8 +15,8 @@ import {
 } from '@mui/material';
 import { Close, ContentCopy, Check } from '@mui/icons-material';
 import QRCode from 'qrcode';
-import LZString from 'lz-string';
 import { Course, CustomTimeBlock } from '../types';
+import { useCallback } from 'react';
 
 interface SaveModalProps {
   open: boolean;
@@ -32,14 +32,7 @@ const SaveModal: React.FC<SaveModalProps> = ({ open, onClose, mySchedule, myOnli
   const [copied, setCopied] = useState<boolean>(false);
   const [compressionRatio, setCompressionRatio] = useState<number>(0);
 
-  // Generate encoded string and QR code when modal opens
-  useEffect(() => {
-    if (open) {
-      generateEncodedString();
-    }
-  }, [open, mySchedule, myOnlineClasses]);
-
-  const generateEncodedString = () => {
+  const generateEncodedString = useCallback(() => {
     try {
       // Create a compact data structure with course identifiers
       const scheduleData = {
@@ -93,7 +86,14 @@ const SaveModal: React.FC<SaveModalProps> = ({ open, onClose, mySchedule, myOnli
     } catch (error) {
       console.error('Error generating encoded string:', error);
     }
-  };
+  }, [mySchedule, myOnlineClasses, customBlocks]);
+
+  // Generate encoded string and QR code when modal opens
+  useEffect(() => {
+    if (open) {
+      generateEncodedString();
+    }
+  }, [open, generateEncodedString]);
 
   const handleCopyString = async () => {
     try {

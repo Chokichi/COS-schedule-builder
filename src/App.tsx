@@ -1111,7 +1111,7 @@ function App() {
         printWindow.close();
       };
     }
-  }, [appState.mySchedule, appState.myOnlineClasses, totalUnits]);
+  }, [appState.mySchedule, appState.myOnlineClasses, appState.customBlocks, totalUnits]);
 
 
   const currentTheme = isLightMode ? lightTheme : darkTheme;
