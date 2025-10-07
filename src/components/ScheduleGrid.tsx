@@ -423,39 +423,44 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
     const courseKey = `${course.CRN}-${day}-${course.StartMin}-${course.EndMin}`;
     const isTooltipOpen = isMobile ? openTooltip === courseKey : undefined;
 
+    // Determine which course to show in the tooltip
+    const displayCourse = isOverlapping && overlappingGroup 
+      ? overlappingGroup.courses[overlappingGroup.currentIndex] 
+      : course;
+
     return (
       <Tooltip
         key={`${course.CRN}-${day}-${course.StartMin}-${course.EndMin}-${course.Location}-${course.Instructor || 'TBA'}-${course.isLabSection ? 'lab' : 'lecture'}-${index}-${overlappingGroup ? overlappingGroup.currentIndex : 0}`}
         title={
           <Box>
-            {course.isCustomBlock ? (
+            {displayCourse.isCustomBlock ? (
               <>
                 <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-                  {course.Title}
+                  {displayCourse.Title}
                 </Typography>
                 <Typography variant="body2" sx={{ mt: 0.5 }}>
                   Custom Time Block
                 </Typography>
                 <Typography variant="body2">
-                  {course.Days} {course.DispTime}
+                  {displayCourse.Days} {displayCourse.DispTime}
                 </Typography>
               </>
             ) : (
               <>
                 <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-                  {course.Subject} {course.Course}
+                  {displayCourse.Subject} {displayCourse.Course}
                 </Typography>
                 <Typography variant="body2" sx={{ mt: 0.5 }}>
-                  {course.Title}
+                  {displayCourse.Title}
                 </Typography>
                 <Typography variant="body2" sx={{ mt: 0.5 }}>
-                  CRN: {course.CRN} • {course.Instructor || 'TBA'}
+                  CRN: {displayCourse.CRN} • {displayCourse.Instructor || 'TBA'}
                 </Typography>
                 <Typography variant="body2">
-                  {course.Location} • {course.Campus}
+                  {displayCourse.Location} • {displayCourse.Campus}
                 </Typography>
                 <Typography variant="body2">
-                  {course.Days} {course.DispTime}
+                  {displayCourse.Days} {displayCourse.DispTime}
                 </Typography>
               </>
             )}

@@ -10,8 +10,12 @@ import {
   TextField,
   IconButton,
   Alert,
+  Tabs,
+  Tab,
+  Paper,
 } from '@mui/material';
-import { Close, ContentPaste } from '@mui/icons-material';
+import { Close, ContentPaste, QrCodeScanner } from '@mui/icons-material';
+import QrReader from 'react-qr-scanner';
 
 interface LoadModalProps {
   open: boolean;
@@ -21,6 +25,8 @@ interface LoadModalProps {
 
 const LoadModal: React.FC<LoadModalProps> = ({ open, onClose, onLoadSchedule }) => {
   const [encodedString, setEncodedString] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<number>(0);
+  const [scanError, setScanError] = useState<string>('');
 
   const handlePasteFromClipboard = async () => {
     try {
@@ -42,6 +48,23 @@ const LoadModal: React.FC<LoadModalProps> = ({ open, onClose, onLoadSchedule }) 
 
   const handleClear = () => {
     setEncodedString('');
+  };
+
+  const handleScan = (data: string | null) => {
+    if (data) {
+      setEncodedString(data);
+      setScanError('');
+    }
+  };
+
+  const handleScanError = (err: any) => {
+    console.error('QR Scan Error:', err);
+    setScanError('Failed to access camera. Please check permissions and try again.');
+  };
+
+  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+    setActiveTab(newValue);
+    setScanError('');
   };
 
   return (
@@ -70,51 +93,120 @@ const LoadModal: React.FC<LoadModalProps> = ({ open, onClose, onLoadSchedule }) 
 
       <DialogContent>
         <Alert severity="info" sx={{ mb: 2 }}>
-          Paste an encoded schedule string to restore your course selections. 
+          Load a saved schedule by pasting an encoded string or scanning a QR code. 
           Make sure you have already loaded the available courses first.
         </Alert>
 
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="subtitle2" gutterBottom>
-            Encoded Schedule String:
-          </Typography>
-          <TextField
-            multiline
-            rows={6}
-            value={encodedString}
-            onChange={(e) => setEncodedString(e.target.value)}
-            fullWidth
-            variant="outlined"
-            size="small"
-            placeholder="Paste the encoded schedule string here..."
-            InputProps={{
-              sx: { 
-                fontFamily: 'monospace',
-                fontSize: '12px'
-              }
-            }}
-            sx={{ mb: 2 }}
-          />
-          <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<ContentPaste />}
-              onClick={handlePasteFromClipboard}
+        <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+          <Tabs value={activeTab} onChange={handleTabChange} aria-label="load schedule tabs">
+            <Tab 
+              label="Manual Input" 
+              icon={<ContentPaste />} 
+              iconPosition="start"
               sx={{ textTransform: 'none' }}
-            >
-              Paste from Clipboard
-            </Button>
-            <Button
-              variant="outlined"
-              size="small"
-              onClick={handleClear}
+            />
+            <Tab 
+              label="QR Scanner" 
+              icon={<QrCodeScanner />} 
+              iconPosition="start"
               sx={{ textTransform: 'none' }}
-            >
-              Clear
-            </Button>
-          </Box>
+            />
+          </Tabs>
         </Box>
+
+        {/* Manual Input Tab */}
+        {activeTab === 0 && (
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="subtitle2" gutterBottom>
+              Encoded Schedule String:
+            </Typography>
+            <TextField
+              multiline
+              rows={6}
+              value={encodedString}
+              onChange={(e) => setEncodedString(e.target.value)}
+              fullWidth
+              variant="outlined"
+              size="small"
+              placeholder="Paste the encoded schedule string here..."
+              InputProps={{
+                sx: { 
+                  fontFamily: 'monospace',
+                  fontSize: '12px'
+                }
+              }}
+              sx={{ mb: 2 }}
+            />
+            <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<ContentPaste />}
+                onClick={handlePasteFromClipboard}
+                sx={{ textTransform: 'none' }}
+              >
+                Paste from Clipboard
+              </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={handleClear}
+                sx={{ textTransform: 'none' }}
+              >
+                Clear
+              </Button>
+            </Box>
+          </Box>
+        )}
+
+        {/* QR Scanner Tab */}
+        {activeTab === 1 && (
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="subtitle2" gutterBottom>
+              Scan QR Code:
+            </Typography>
+            <Paper 
+              elevation={2} 
+              sx={{ 
+                p: 2, 
+                textAlign: 'center',
+                backgroundColor: '#f5f5f5',
+                minHeight: '300px',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center',
+                alignItems: 'center'
+              }}
+            >
+              {scanError ? (
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="body2" color="error" sx={{ mb: 2 }}>
+                    {scanError}
+                  </Typography>
+                  <Button 
+                    variant="outlined" 
+                    onClick={() => setScanError('')}
+                    sx={{ textTransform: 'none' }}
+                  >
+                    Try Again
+                  </Button>
+                </Box>
+              ) : (
+                <QrReader
+                  delay={300}
+                  onError={handleScanError}
+                  onScan={handleScan}
+                  style={{ width: '100%', maxWidth: '400px' }}
+                />
+              )}
+            </Paper>
+            {encodedString && (
+              <Alert severity="success" sx={{ mt: 2 }}>
+                QR Code scanned successfully! The encoded string has been loaded.
+              </Alert>
+            )}
+          </Box>
+        )}
 
         <Alert severity="warning">
           <Typography variant="body2">
