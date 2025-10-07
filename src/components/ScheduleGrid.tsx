@@ -17,6 +17,7 @@ interface ScheduleGridProps {
   onRemoveCourse: (crn: string) => void;
   onEditCustomBlock?: (blockId: string) => void;
   isMySchedule?: boolean;
+  courseOpacity?: number;
   sharedTimeRange?: { startMin: number; endMin: number };
 }
 
@@ -29,6 +30,7 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
   onRemoveCourse,
   onEditCustomBlock,
   isMySchedule = false,
+  courseOpacity = 0.6,
   sharedTimeRange,
 }) => {
   // State for cycling through overlapping courses
@@ -516,8 +518,25 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
             right: '6px',
             top: Math.max(0, top),
             height: Math.max(18, height),
-            background: course.__color,
-            opacity: 'var(--course-opacity, 0.6)',
+            background: (() => {
+              // Handle both HSL and hex colors with opacity applied only to background
+              if (course.__color.startsWith('hsl(')) {
+                // HSL color - convert to HSLA with opacity
+                return course.__color.replace(/hsl\(([^)]+)\)/, (match, content) => {
+                  return `hsla(${content}, ${courseOpacity})`;
+                });
+              } else if (course.__color.startsWith('#')) {
+                // Hex color - convert to rgba with opacity
+                const hex = course.__color.replace('#', '');
+                const r = parseInt(hex.substr(0, 2), 16);
+                const g = parseInt(hex.substr(2, 2), 16);
+                const b = parseInt(hex.substr(4, 2), 16);
+                return `rgba(${r}, ${g}, ${b}, ${courseOpacity})`;
+              } else {
+                // Fallback - return original color
+                return course.__color;
+              }
+            })(),
             border: `1px solid ${course.__color}`,
             borderRadius: '8px',
             padding: '6px 8px',
@@ -624,10 +643,12 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
             {/* Overlapping Course Indicator */}
             {isOverlapping && (
               <Box sx={{
+                position: 'absolute',
+                bottom: '-2px',
+                left: '-4px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                marginBottom: '2px',
                 padding: '1px 0',
               }}>
                 <Typography
@@ -655,8 +676,8 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
                 variant="contained"
                 sx={{
                   position: 'absolute',
-                  bottom: '3px',
-                  right: '3px',
+                  bottom: '-2px',
+                  right: '-4px',
                   minWidth: 'auto',
                   width: 'auto',
                   height: 'auto',

@@ -361,6 +361,10 @@ function App() {
     if (savedData) {
       console.log('🔍 Setting restore prompt to true');
       setShowRestorePrompt(true);
+    } else {
+      // No saved data - automatically open ImportModal to help new users get started
+      console.log('👋 No saved data found - opening ImportModal to help user get started');
+      setImportModalOpen(true);
     }
   }, [loadFromLocalStorage]);
 
@@ -1380,6 +1384,7 @@ function App() {
                 onAddCourse={handleAddCourse}
                 onRemoveCourse={handleRemoveCourse}
                 onEditCustomBlock={handleEditCustomBlock}
+                courseOpacity={courseOpacity}
                 sharedTimeRange={sharedTimeRange}
               />
               
@@ -1521,6 +1526,7 @@ function App() {
                 onAddCourse={handleAddCourse}
                 onRemoveCourse={handleRemoveCourse}
                 onEditCustomBlock={handleEditCustomBlock}
+                courseOpacity={courseOpacity}
                 isMySchedule={true}
                 sharedTimeRange={sharedTimeRange}
               />
