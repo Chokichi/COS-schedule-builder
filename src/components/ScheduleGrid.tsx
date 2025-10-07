@@ -17,7 +17,6 @@ interface ScheduleGridProps {
   onRemoveCourse: (crn: string) => void;
   onEditCustomBlock?: (blockId: string) => void;
   isMySchedule?: boolean;
-  courseOpacity?: number;
   sharedTimeRange?: { startMin: number; endMin: number };
 }
 
@@ -30,7 +29,6 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
   onRemoveCourse,
   onEditCustomBlock,
   isMySchedule = false,
-  courseOpacity = 0.6,
   sharedTimeRange,
 }) => {
   // State for cycling through overlapping courses
@@ -91,7 +89,7 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
             WaitAct: 0,
             WaitRem: 0,
             __color: block.color,
-            __bg: block.color.replace(/^hsl\(([^)]+)\)$/, 'hsla($1, 0.22)'),
+            __bg: block.color,
             isCustomBlock: true
           });
         }
@@ -518,10 +516,8 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
             right: '6px',
             top: Math.max(0, top),
             height: Math.max(18, height),
-            background: course.__color.replace(/hsl\(([^)]+)\)/, (match, content) => {
-              // Convert HSL to HSLA with the desired opacity
-              return `hsla(${content}, ${courseOpacity})`;
-            }),
+            background: course.__color,
+            opacity: 'var(--course-opacity, 0.6)',
             border: `1px solid ${course.__color}`,
             borderRadius: '8px',
             padding: '6px 8px',

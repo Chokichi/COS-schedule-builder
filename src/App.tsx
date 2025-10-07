@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -146,6 +146,11 @@ function App() {
   const [showRestorePrompt, setShowRestorePrompt] = useState(false);
   const [courseOpacity, setCourseOpacity] = useState(0.6);
   const [showOpacityMenu, setShowOpacityMenu] = useState(false);
+
+  // Update CSS custom property when courseOpacity changes
+  useEffect(() => {
+    document.documentElement.style.setProperty('--course-opacity', courseOpacity.toString());
+  }, [courseOpacity]);
 
   // Calculate shared time range for both schedules based on filtered courses
   const sharedTimeRange = useMemo(() => {
@@ -1375,7 +1380,6 @@ function App() {
                 onAddCourse={handleAddCourse}
                 onRemoveCourse={handleRemoveCourse}
                 onEditCustomBlock={handleEditCustomBlock}
-                courseOpacity={courseOpacity}
                 sharedTimeRange={sharedTimeRange}
               />
               
