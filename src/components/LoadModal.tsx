@@ -14,7 +14,7 @@ import {
   Tab,
   Paper,
 } from '@mui/material';
-import { Close, ContentPaste, QrCodeScanner } from '@mui/icons-material';
+import { Close, ContentPaste, QrCodeScanner, FlipCameraIos } from '@mui/icons-material';
 import QrReader from 'react-qr-scanner';
 
 interface LoadModalProps {
@@ -27,6 +27,8 @@ const LoadModal: React.FC<LoadModalProps> = ({ open, onClose, onLoadSchedule }) 
   const [encodedString, setEncodedString] = useState<string>('');
   const [activeTab, setActiveTab] = useState<number>(0);
   const [scanError, setScanError] = useState<string>('');
+  const [cameraId, setCameraId] = useState<string>('environment'); // Default to back camera
+  const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([]);
 
   // Suppress console warnings from react-qr-scanner
   React.useEffect(() => {
@@ -132,12 +134,51 @@ const LoadModal: React.FC<LoadModalProps> = ({ open, onClose, onLoadSchedule }) 
     setScanError('');
   };
 
+  // Get available cameras
+  const getAvailableCameras = async () => {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(device => device.kind === 'videoinput');
+      setAvailableCameras(videoDevices);
+      
+      // If no cameras found, try to get user media to trigger permission request
+      if (videoDevices.length === 0) {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        stream.getTracks().forEach(track => track.stop()); // Stop the stream immediately
+        
+        // Re-enumerate devices after permission
+        const updatedDevices = await navigator.mediaDevices.enumerateDevices();
+        const updatedVideoDevices = updatedDevices.filter(device => device.kind === 'videoinput');
+        setAvailableCameras(updatedVideoDevices);
+      }
+    } catch (error) {
+      console.error('Error getting cameras:', error);
+    }
+  };
+
+  // Switch camera
+  const switchCamera = () => {
+    if (availableCameras.length > 1) {
+      const currentIndex = availableCameras.findIndex(camera => camera.deviceId === cameraId);
+      const nextIndex = (currentIndex + 1) % availableCameras.length;
+      setCameraId(availableCameras[nextIndex].deviceId);
+    }
+  };
+
+  // Get cameras when QR scanner tab is opened
+  React.useEffect(() => {
+    if (open && activeTab === 1) {
+      getAvailableCameras();
+    }
+  }, [open, activeTab]);
+
   // Cleanup when modal closes
   React.useEffect(() => {
     if (!open) {
       setEncodedString('');
       setScanError('');
       setActiveTab(0);
+      setCameraId('environment'); // Reset to back camera
     }
   }, [open]);
 
@@ -272,13 +313,63 @@ const LoadModal: React.FC<LoadModalProps> = ({ open, onClose, onLoadSchedule }) 
                   </Button>
                 </Box>
               ) : activeTab === 1 ? (
-                <QrReader
-                  key="qr-scanner"
-                  delay={300}
-                  onError={handleScanError}
-                  onScan={handleScan}
-                  style={{ width: '100%', maxWidth: '400px' }}
-                />
+                <Box sx={{ position: 'relative' }}>
+                  <QrReader
+                    key={`qr-scanner-${cameraId}`}
+                    delay={300}
+                    onError={handleScanError}
+                    onScan={handleScan}
+                    style={{ width: '100%', maxWidth: '400px' }}
+                    constraints={{
+                      video: {
+                        deviceId: cameraId
+                      }
+                    }}
+                  />
+                  
+                  {/* Camera Switch Button */}
+                  {availableCameras.length > 1 && (
+                    <Button
+                      variant="contained"
+                      size="small"
+                      onClick={switchCamera}
+                      startIcon={<FlipCameraIos />}
+                      sx={{
+                        position: 'absolute',
+                        top: '8px',
+                        right: '8px',
+                        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                        color: 'white',
+                        '&:hover': {
+                          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        },
+                        minWidth: 'auto',
+                        padding: '4px 8px',
+                        fontSize: '12px',
+                        textTransform: 'none',
+                      }}
+                    >
+                      Switch Camera
+                    </Button>
+                  )}
+                  
+                  {/* Camera Info */}
+                  {availableCameras.length > 0 && (
+                    <Box sx={{ 
+                      position: 'absolute', 
+                      bottom: '8px', 
+                      left: '8px',
+                      backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                      color: 'white',
+                      padding: '4px 8px',
+                      borderRadius: '4px',
+                      fontSize: '12px'
+                    }}>
+                      {availableCameras.find(cam => cam.deviceId === cameraId)?.label || 
+                       (cameraId === 'environment' ? 'Back Camera' : 'Front Camera')}
+                    </Box>
+                  )}
+                </Box>
               ) : (
                 <Box sx={{ p: 4, textAlign: 'center' }}>
                   <Typography variant="body2" color="text.secondary">
