@@ -251,9 +251,18 @@ export function isEncodedScheduleData(text: string): boolean {
 // Decode compact schedule data
 export function decodeScheduleData(encodedString: string): { c: any[], o: any[], b?: any[] } | null {
   try {
-    // Simple base64 decoding without compression
-    const jsonString = decodeURIComponent(escape(atob(encodedString)));
-    const data = JSON.parse(jsonString);
+    // Decode base64
+    const decoded = atob(encodedString);
+    let data;
+    
+    // Try direct JSON parse first (new format)
+    try {
+      data = JSON.parse(decoded);
+    } catch {
+      // Try with URI decoding (legacy format)
+      const jsonString = decodeURIComponent(escape(decoded));
+      data = JSON.parse(jsonString);
+    }
     
     // Check if it's a valid SSB schedule
     if (data.t !== 'ssb') {
