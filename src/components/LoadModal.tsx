@@ -137,18 +137,27 @@ const LoadModal: React.FC<LoadModalProps> = ({ open, onClose, onLoadSchedule }) 
   // Get available cameras
   const getAvailableCameras = async () => {
     try {
+      console.log('🔍 Getting available cameras...');
       const devices = await navigator.mediaDevices.enumerateDevices();
+      console.log('🔍 All devices:', devices);
+      
       const videoDevices = devices.filter(device => device.kind === 'videoinput');
+      console.log('🔍 Video devices found:', videoDevices);
+      console.log('🔍 Video devices count:', videoDevices.length);
+      
       setAvailableCameras(videoDevices);
       
       // If no cameras found, try to get user media to trigger permission request
       if (videoDevices.length === 0) {
+        console.log('🔍 No cameras found, requesting permission...');
         const stream = await navigator.mediaDevices.getUserMedia({ video: true });
         stream.getTracks().forEach(track => track.stop()); // Stop the stream immediately
         
         // Re-enumerate devices after permission
         const updatedDevices = await navigator.mediaDevices.enumerateDevices();
         const updatedVideoDevices = updatedDevices.filter(device => device.kind === 'videoinput');
+        console.log('🔍 Updated video devices after permission:', updatedVideoDevices);
+        console.log('🔍 Updated video devices count:', updatedVideoDevices.length);
         setAvailableCameras(updatedVideoDevices);
       }
     } catch (error) {
@@ -158,10 +167,22 @@ const LoadModal: React.FC<LoadModalProps> = ({ open, onClose, onLoadSchedule }) 
 
   // Switch camera
   const switchCamera = () => {
+    console.log('🔍 Switching camera...');
+    console.log('🔍 Available cameras:', availableCameras);
+    console.log('🔍 Current camera ID:', cameraId);
+    
     if (availableCameras.length > 1) {
       const currentIndex = availableCameras.findIndex(camera => camera.deviceId === cameraId);
+      console.log('🔍 Current camera index:', currentIndex);
+      
       const nextIndex = (currentIndex + 1) % availableCameras.length;
-      setCameraId(availableCameras[nextIndex].deviceId);
+      const nextCameraId = availableCameras[nextIndex].deviceId;
+      console.log('🔍 Switching to camera index:', nextIndex);
+      console.log('🔍 New camera ID:', nextCameraId);
+      
+      setCameraId(nextCameraId);
+    } else {
+      console.log('🔍 Not enough cameras to switch');
     }
   };
 
@@ -326,6 +347,20 @@ const LoadModal: React.FC<LoadModalProps> = ({ open, onClose, onLoadSchedule }) 
                       }
                     }}
                   />
+                  
+                  {/* Debug Info */}
+                  <Box sx={{ 
+                    position: 'absolute', 
+                    top: '8px', 
+                    left: '8px',
+                    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                    color: 'white',
+                    padding: '4px 8px',
+                    borderRadius: '4px',
+                    fontSize: '10px'
+                  }}>
+                    Cameras: {availableCameras.length} | ID: {cameraId}
+                  </Box>
                   
                   {/* Camera Switch Button */}
                   {availableCameras.length > 1 && (

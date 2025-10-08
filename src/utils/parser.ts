@@ -46,7 +46,8 @@ export function parseHtmlTable(html: string, isBasicSchedule: boolean = false): 
 
   // Pre-compile regex patterns for better performance
   const subjectPattern = /^([A-Z]+)\s*-\s*(.+)$/;
-  const coursePattern = /^([A-Z]+)\s+(\d+)\s+-\s+(.+?)(?:\s+Lecture)?(?:\s+Lab)?$/;
+  // Updated to handle course numbers with letters and any length (e.g., C1000, 020, 1234)
+  const coursePattern = /^([A-Z]+)\s+([A-Z]?\d+[A-Z]?)\s+-\s+(.+?)(?:\s+Lecture)?(?:\s+Lab)?$/;
   const timePattern = /(\d{1,2}:\d{2}[ap]m)\s*-\s*(\d{1,2}:\d{2}[ap]m)/i;
   const dayPattern = /^[MTWRF]$/;
 
@@ -72,7 +73,7 @@ export function parseHtmlTable(html: string, isBasicSchedule: boolean = false): 
       const m = text.match(coursePattern);
       if (m) {
         currentSubject = m[1];
-        currentCourse = m[2].padStart(3, '0');
+        currentCourse = m[2]; // Keep original course number format (e.g., C1000, 020, 1234)
         currentTitle = m[3].trim();
       }
       continue;
