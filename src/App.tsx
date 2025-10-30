@@ -853,8 +853,8 @@ function App() {
   }, []);
 
   const handlePrintSchedule = useCallback(async () => {
-    if (appState.mySchedule.length === 0 && appState.myOnlineClasses.length === 0) {
-      alert('No courses in your schedule to print');
+    if (appState.mySchedule.length === 0 && appState.myOnlineClasses.length === 0 && appState.customBlocks.length === 0) {
+      alert('No courses or custom blocks in your schedule to print');
       return;
     }
 
@@ -1009,6 +1009,7 @@ function App() {
           
           ${['M','T','W','R','F'].map(day => {
             const dayCourses = appState.mySchedule.filter(c => c.Days.includes(day));
+            const dayCustomBlocks = appState.customBlocks.filter(block => block.days.includes(day));
             return `
               <div class="day-col">
                 ${dayCourses.map(course => {
@@ -1023,16 +1024,39 @@ function App() {
                     </div>
                   `;
                 }).join('')}
+                ${dayCustomBlocks.map(block => {
+                  const startHour = timeRange.startHour;
+                  const startMinutes = parseInt(block.times[day].start);
+                  const endMinutes = parseInt(block.times[day].end);
+                  const top = ((startMinutes - (startHour * 60)) / 60) * 40;
+                  const height = ((endMinutes - startMinutes) / 60) * 40;
+                  const startTime = Math.floor(startMinutes / 60);
+                  const startMin = startMinutes % 60;
+                  const endTime = Math.floor(endMinutes / 60);
+                  const endMin = endMinutes % 60;
+                  const formatTime = (hour: number, min: number) => {
+                    const ampm = hour >= 12 ? 'PM' : 'AM';
+                    const h12 = ((hour + 11) % 12) + 1;
+                    return `${h12}:${min.toString().padStart(2, '0')} ${ampm}`;
+                  };
+                  return `
+                    <div class="slot" style="top: ${top}px; height: ${height}px; background: ${block.color}; border-color: ${block.color};">
+                      <strong>${block.title}</strong>
+                      <small>${formatTime(startTime, startMin)} - ${formatTime(endTime, endMin)}</small>
+                    </div>
+                  `;
+                }).join('')}
               </div>
             `;
           }).join('')}
         </div>
         
         <div class="course-table">
-          <h2>Course Details</h2>
+          <h2>Schedule Details</h2>
           <table>
             <thead>
               <tr>
+                <th>Type</th>
                 <th>Subject</th>
                 <th>Course</th>
                 <th>Title</th>
@@ -1048,6 +1072,7 @@ function App() {
             <tbody>
               ${uniqueCourses.map(course => `
                 <tr>
+                  <td>Course</td>
                   <td>${course.Subject}</td>
                   <td>${course.Course}</td>
                   <td>${course.Title}</td>
@@ -1062,6 +1087,7 @@ function App() {
               `).join('')}
               ${appState.myOnlineClasses.map(course => `
                 <tr>
+                  <td>Online Course</td>
                   <td>${course.Subject}</td>
                   <td>${course.Course}</td>
                   <td>${course.Title}</td>
@@ -1074,6 +1100,40 @@ function App() {
                   <td>${course.Campus}</td>
                 </tr>
               `).join('')}
+              ${appState.customBlocks.map(block => {
+                const formatTime = (hour: number, min: number) => {
+                  const ampm = hour >= 12 ? 'PM' : 'AM';
+                  const h12 = ((hour + 11) % 12) + 1;
+                  return `${h12}:${min.toString().padStart(2, '0')} ${ampm}`;
+                };
+                const formatTimes = () => {
+                  const timeStrings = block.days.map(day => {
+                    const startMinutes = parseInt(block.times[day].start);
+                    const endMinutes = parseInt(block.times[day].end);
+                    const startTime = Math.floor(startMinutes / 60);
+                    const startMin = startMinutes % 60;
+                    const endTime = Math.floor(endMinutes / 60);
+                    const endMin = endMinutes % 60;
+                    return `${day}: ${formatTime(startTime, startMin)} - ${formatTime(endTime, endMin)}`;
+                  });
+                  return timeStrings.join(', ');
+                };
+                return `
+                  <tr>
+                    <td>Custom Block</td>
+                    <td>-</td>
+                    <td>-</td>
+                    <td>${block.title}</td>
+                    <td>-</td>
+                    <td>-</td>
+                    <td>-</td>
+                    <td>${block.days.join('')}</td>
+                    <td>${formatTimes()}</td>
+                    <td>-</td>
+                    <td>-</td>
+                  </tr>
+                `;
+              }).join('')}
             </tbody>
           </table>
         </div>
