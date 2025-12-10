@@ -31,6 +31,16 @@ export interface CustomTimeBlock {
   color: string;
 }
 
+export interface SavedSchedule {
+  id: string;
+  name: string;
+  mySchedule: Course[];
+  myOnlineClasses: Course[];
+  customBlocks: CustomTimeBlock[];
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface FilterState {
   subjectAllow: Set<string>;
   courseAllow: Set<string>;

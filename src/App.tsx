@@ -10,14 +10,36 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  IconButton,
+  Menu,
+  MenuItem,
+  ListItemIcon,
+  ListItemText,
+  Tooltip,
+  Select,
+  FormControl,
+  InputLabel,
+  TextField,
 } from '@mui/material';
-import { AppState, FilterState, SubjectData, CustomTimeBlock } from './types';
+import {
+  ViewColumn,
+  ViewAgenda,
+  Add,
+  Save,
+  Print,
+  Share,
+  FolderOpen,
+  CompareArrows,
+  Close,
+  Edit,
+  Delete,
+} from '@mui/icons-material';
+import { AppState, FilterState, SubjectData, CustomTimeBlock, SavedSchedule } from './types';
 import FilterPanel from './components/FilterPanel';
 import ScheduleGrid from './components/ScheduleGrid';
 import OnlineCoursesList from './components/OnlineCoursesList';
 import ImportModal from './components/ImportModal';
-import SaveModal from './components/SaveModal';
-import LoadModal from './components/LoadModal';
+import SaveLoadModal from './components/SaveLoadModal';
 import CustomBlockModal from './components/CustomBlockModal';
 import { parseHtmlTable, loadBasicSchedule } from './utils/parser';
 
@@ -139,13 +161,25 @@ function App() {
   const [appState, setAppState] = useState<AppState>(initialAppState);
   const [isLightMode, setIsLightMode] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
-  const [saveModalOpen, setSaveModalOpen] = useState(false);
-  const [loadModalOpen, setLoadModalOpen] = useState(false);
+  const [saveLoadModalOpen, setSaveLoadModalOpen] = useState(false);
   const [customBlockModalOpen, setCustomBlockModalOpen] = useState(false);
   const [editingCustomBlock, setEditingCustomBlock] = useState<CustomTimeBlock | null>(null);
   const [showRestorePrompt, setShowRestorePrompt] = useState(false);
   const [courseOpacity, setCourseOpacity] = useState(0.6);
   const [showOpacityMenu, setShowOpacityMenu] = useState(false);
+  const [scheduleLayout, setScheduleLayout] = useState<'horizontal' | 'vertical'>('horizontal');
+  const [layoutMenuAnchor, setLayoutMenuAnchor] = useState<{ available: HTMLElement | null; mySchedule: HTMLElement | null }>({ available: null, mySchedule: null });
+  const [savedSchedules, setSavedSchedules] = useState<SavedSchedule[]>([]);
+  const [selectedScheduleId, setSelectedScheduleId] = useState<string | ''>('');
+  const [saveLoadMenuAnchor, setSaveLoadMenuAnchor] = useState<HTMLElement | null>(null);
+  const [saveScheduleModalOpen, setSaveScheduleModalOpen] = useState(false);
+  const [scheduleName, setScheduleName] = useState('');
+  const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
+  const [editScheduleModalOpen, setEditScheduleModalOpen] = useState(false);
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareSchedule1Id, setCompareSchedule1Id] = useState<string | ''>('');
+  const [compareSchedule2Id, setCompareSchedule2Id] = useState<string | ''>('');
+  const [compareMenuAnchor, setCompareMenuAnchor] = useState<HTMLElement | null>(null);
 
   // Update CSS custom property when courseOpacity changes
   useEffect(() => {
@@ -605,12 +639,162 @@ function App() {
     }
   }, [handleParseHtml]);
 
-  const handleSaveSchedule = useCallback(() => {
-    setSaveModalOpen(true);
+  const handleSaveLoadSchedule = useCallback((event: React.MouseEvent<HTMLElement>) => {
+    setSaveLoadMenuAnchor(event.currentTarget);
   }, []);
 
-  const handleLoadSchedule = useCallback(() => {
-    setLoadModalOpen(true);
+  const handleSaveScheduleClick = useCallback(() => {
+    setSaveLoadMenuAnchor(null);
+    setScheduleName('');
+    setEditingScheduleId(null);
+    setSaveScheduleModalOpen(true);
+  }, []);
+
+  const [saveLoadModalTab, setSaveLoadModalTab] = useState<number>(0);
+
+  const handleShareScheduleClick = useCallback(() => {
+    setSaveLoadMenuAnchor(null);
+    setSaveLoadModalTab(0); // Save tab
+    setSaveLoadModalOpen(true);
+  }, []);
+
+  const handleLoadScheduleClick = useCallback(() => {
+    setSaveLoadMenuAnchor(null);
+    setSaveLoadModalTab(1); // Load tab
+    setSaveLoadModalOpen(true);
+  }, []);
+
+  // Load saved schedules from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('ssb_saved_schedules');
+      if (saved) {
+        const schedules = JSON.parse(saved);
+        // Validate and restore schedules
+        if (Array.isArray(schedules) && schedules.length > 0) {
+          setSavedSchedules(schedules);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load saved schedules:', error);
+    }
+  }, []);
+
+  // Save schedules to localStorage whenever they change
+  useEffect(() => {
+    try {
+      localStorage.setItem('ssb_saved_schedules', JSON.stringify(savedSchedules));
+    } catch (error) {
+      console.error('Failed to save schedules:', error);
+    }
+  }, [savedSchedules]);
+
+  const handleSaveSchedule = useCallback(() => {
+    if (!scheduleName.trim()) {
+      alert('Please enter a name for the schedule');
+      return;
+    }
+
+    const newSchedule: SavedSchedule = {
+      id: editingScheduleId || `schedule_${Date.now()}`,
+      name: scheduleName.trim(),
+      mySchedule: appState.mySchedule,
+      myOnlineClasses: appState.myOnlineClasses,
+      customBlocks: appState.customBlocks,
+      createdAt: editingScheduleId 
+        ? savedSchedules.find(s => s.id === editingScheduleId)?.createdAt || Date.now()
+        : Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    if (editingScheduleId) {
+      setSavedSchedules(prev => prev.map(s => s.id === editingScheduleId ? newSchedule : s));
+    } else {
+      setSavedSchedules(prev => [...prev, newSchedule]);
+    }
+
+    setSaveScheduleModalOpen(false);
+    setScheduleName('');
+    setEditingScheduleId(null);
+  }, [scheduleName, appState.mySchedule, appState.myOnlineClasses, appState.customBlocks, editingScheduleId, savedSchedules]);
+
+  const handleLoadSavedSchedule = useCallback((scheduleId: string) => {
+    const schedule = savedSchedules.find(s => s.id === scheduleId);
+    if (schedule) {
+      setAppState(prev => ({
+        ...prev,
+        mySchedule: schedule.mySchedule,
+        myOnlineClasses: schedule.myOnlineClasses,
+        customBlocks: schedule.customBlocks,
+      }));
+      setSelectedScheduleId(scheduleId);
+    }
+  }, [savedSchedules]);
+
+  const handleDeleteSchedule = useCallback((scheduleId: string) => {
+    // eslint-disable-next-line no-restricted-globals
+    if (confirm('Are you sure you want to delete this schedule?')) {
+      setSavedSchedules(prev => prev.filter(s => s.id !== scheduleId));
+      if (selectedScheduleId === scheduleId) {
+        setSelectedScheduleId('');
+      }
+      if (compareSchedule1Id === scheduleId || compareSchedule2Id === scheduleId) {
+        setCompareSchedule1Id('');
+        setCompareSchedule2Id('');
+        setCompareMode(false);
+      }
+    }
+  }, [selectedScheduleId, compareSchedule1Id, compareSchedule2Id]);
+
+  const handleEditSchedule = useCallback(() => {
+    if (!selectedScheduleId) return;
+    const schedule = savedSchedules.find(s => s.id === selectedScheduleId);
+    if (schedule) {
+      setScheduleName(schedule.name);
+      setEditingScheduleId(schedule.id);
+      setEditScheduleModalOpen(true);
+    }
+  }, [selectedScheduleId, savedSchedules]);
+
+  const handleRenameSchedule = useCallback(() => {
+    if (!scheduleName.trim()) {
+      alert('Please enter a name for the schedule');
+      return;
+    }
+    if (!editingScheduleId) return;
+
+    const schedule = savedSchedules.find(s => s.id === editingScheduleId);
+    if (schedule) {
+      const updatedSchedule: SavedSchedule = {
+        ...schedule,
+        name: scheduleName.trim(),
+        updatedAt: Date.now(),
+      };
+      setSavedSchedules(prev => prev.map(s => s.id === editingScheduleId ? updatedSchedule : s));
+    }
+
+    setEditScheduleModalOpen(false);
+    setScheduleName('');
+    setEditingScheduleId(null);
+  }, [scheduleName, editingScheduleId, savedSchedules]);
+
+  const handleStartCompare = useCallback(() => {
+    if (!compareSchedule1Id || !compareSchedule2Id) {
+      alert('Please select two schedules to compare');
+      return;
+    }
+    if (compareSchedule1Id === compareSchedule2Id) {
+      alert('Please select two different schedules to compare');
+      return;
+    }
+    setCompareMode(true);
+    setCompareMenuAnchor(null);
+  }, [compareSchedule1Id, compareSchedule2Id]);
+
+  const handleExitCompare = useCallback(() => {
+    setCompareMode(false);
+    setCompareSchedule1Id('');
+    setCompareSchedule2Id('');
   }, []);
 
   const handleCreateCustomBlock = useCallback(() => {
@@ -1220,22 +1404,25 @@ function App() {
         {/* Main Grid Layout */}
         <Box sx={{
           display: 'grid',
-          gridTemplateColumns: { xs: '1fr', md: '320px 1fr' },
+          gridTemplateColumns: compareMode 
+            ? '1fr'  // Full width in compare mode
+            : { xs: '1fr', md: '320px 1fr' },
           gap: '16px',
           padding: '16px',
           minHeight: 'calc(100vh - 80px)'
         }}>
-          {/* Left Panel */}
-          <Box sx={{
-            background: 'background.paper',
-            border: (theme) => theme.palette.mode === 'dark' 
-              ? '1px solid #1f2937' 
-              : '1px solid #e5e7eb',
-            borderRadius: '14px',
-            padding: '14px',
-            boxShadow: '0 10px 30px rgba(0,0,0,0.25)',
-            height: 'fit-content'
-          }}>
+          {/* Left Panel - Filter Panel (hidden in compare mode) */}
+          {!compareMode && (
+            <Box sx={{
+              background: 'background.paper',
+              border: (theme) => theme.palette.mode === 'dark' 
+                ? '1px solid #1f2937' 
+                : '1px solid #e5e7eb',
+              borderRadius: '14px',
+              padding: '14px',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.25)',
+              height: 'fit-content'
+            }}>
             {/* Import Button */}
             <Box sx={{ marginBottom: '16px' }}>
               <Button
@@ -1278,13 +1465,179 @@ function App() {
               onToggleLightMode={() => setIsLightMode(!isLightMode)}
             />
           </Box>
+          )}
           
-          {/* Right Grid */}
-          <Box sx={{
-            display: 'grid',
-            gridTemplateColumns: { xs: '1fr', lg: 'repeat(2, minmax(300px, 1fr))' },
-            gap: '16px'
-          }}>
+          {/* Right Grid / Compare Mode */}
+          {compareMode ? (
+            /* Compare Mode */
+            <Box>
+              {/* Compare Mode Header */}
+              <Box sx={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                mb: 2,
+                p: 2,
+                background: (theme) => theme.palette.mode === 'dark' ? '#1a2330' : '#ffffff',
+                border: (theme) => theme.palette.mode === 'dark' 
+                  ? '1px solid #203045' 
+                  : '1px solid #d1d5db',
+                borderRadius: '16px',
+              }}>
+                <Typography variant="h6" sx={{ fontSize: '16px', fontWeight: 'bold' }}>
+                  Compare Schedules
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                  <FormControl size="small" sx={{ minWidth: 200 }}>
+                    <InputLabel>Schedule 1</InputLabel>
+                    <Select
+                      value={compareSchedule1Id}
+                      onChange={(e) => setCompareSchedule1Id(e.target.value as string)}
+                      label="Schedule 1"
+                    >
+                      {savedSchedules.map((schedule) => (
+                        <MenuItem key={schedule.id} value={schedule.id}>
+                          {schedule.name}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <FormControl size="small" sx={{ minWidth: 200 }}>
+                    <InputLabel>Schedule 2</InputLabel>
+                    <Select
+                      value={compareSchedule2Id}
+                      onChange={(e) => setCompareSchedule2Id(e.target.value as string)}
+                      label="Schedule 2"
+                    >
+                      {savedSchedules.map((schedule) => (
+                        <MenuItem key={schedule.id} value={schedule.id}>
+                          {schedule.name}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <Tooltip title="Exit Compare Mode">
+                    <IconButton
+                      onClick={handleExitCompare}
+                      sx={{
+                        background: 'error.main',
+                        color: 'white',
+                        '&:hover': {
+                          background: 'error.dark',
+                        },
+                      }}
+                    >
+                      <Close />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
+              </Box>
+              
+              <Box sx={{
+                display: 'grid',
+                gridTemplateColumns: { xs: '1fr', lg: 'repeat(2, 1fr)' },
+                gap: '16px',
+                width: '100%'
+              }}>
+              {/* Compare Schedule 1 */}
+              {(() => {
+                const schedule1 = savedSchedules.find(s => s.id === compareSchedule1Id);
+                if (!schedule1) return null;
+                return (
+                  <Box sx={{
+                    background: (theme) => theme.palette.mode === 'dark' ? '#1a2330' : '#ffffff',
+                    border: (theme) => theme.palette.mode === 'dark' 
+                      ? '1px solid #203045' 
+                      : '1px solid #d1d5db',
+                    borderRadius: '16px',
+                    padding: '10px',
+                    minHeight: '680px',
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.25)'
+                  }}>
+                    <Box sx={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: '8px'
+                    }}>
+                      <Typography variant="h6" sx={{
+                        fontSize: '15px',
+                        color: 'text.secondary'
+                      }}>
+                        {schedule1.name}
+                      </Typography>
+                    </Box>
+                    <ScheduleGrid
+                      courses={schedule1.mySchedule}
+                      mySchedule={schedule1.mySchedule}
+                      customBlocks={schedule1.customBlocks}
+                      filters={appState.filters}
+                      onAddCourse={() => {}} // Disabled in compare mode
+                      onRemoveCourse={() => {}} // Disabled in compare mode
+                      onEditCustomBlock={handleEditCustomBlock}
+                      courseOpacity={courseOpacity}
+                      isMySchedule={true}
+                      sharedTimeRange={sharedTimeRange}
+                    />
+                  </Box>
+                );
+              })()}
+              
+              {/* Compare Schedule 2 */}
+              {(() => {
+                const schedule2 = savedSchedules.find(s => s.id === compareSchedule2Id);
+                if (!schedule2) return null;
+                return (
+                  <Box sx={{
+                    background: (theme) => theme.palette.mode === 'dark' ? '#1a2330' : '#ffffff',
+                    border: (theme) => theme.palette.mode === 'dark' 
+                      ? '1px solid #203045' 
+                      : '1px solid #d1d5db',
+                    borderRadius: '16px',
+                    padding: '10px',
+                    minHeight: '680px',
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.25)'
+                  }}>
+                    <Box sx={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: '8px'
+                    }}>
+                      <Typography variant="h6" sx={{
+                        fontSize: '15px',
+                        color: 'text.secondary'
+                      }}>
+                        {schedule2.name}
+                      </Typography>
+                    </Box>
+                    <ScheduleGrid
+                      courses={schedule2.mySchedule}
+                      mySchedule={schedule2.mySchedule}
+                      customBlocks={schedule2.customBlocks}
+                      filters={appState.filters}
+                      onAddCourse={() => {}} // Disabled in compare mode
+                      onRemoveCourse={() => {}} // Disabled in compare mode
+                      onEditCustomBlock={handleEditCustomBlock}
+                      courseOpacity={courseOpacity}
+                      isMySchedule={true}
+                      sharedTimeRange={sharedTimeRange}
+                    />
+                  </Box>
+                );
+              })()}
+              </Box>
+            </Box>
+          ) : (
+            /* Normal Mode */
+            <Box sx={{
+              display: 'grid',
+              gridTemplateColumns: scheduleLayout === 'horizontal' 
+                ? { xs: '1fr', lg: 'repeat(2, minmax(300px, 1fr))' }
+                : { xs: '1fr' },
+              gridTemplateRows: scheduleLayout === 'vertical' ? 'auto auto' : 'auto',
+              gap: '16px'
+            }}>
             {/* Available Courses Board */}
             <Box sx={{
               background: (theme) => theme.palette.mode === 'dark' ? '#1a2330' : '#ffffff',
@@ -1303,12 +1656,65 @@ function App() {
                 alignItems: 'center',
                 margin: '4px 8px 8px 8px'
               }}>
-                <Typography variant="h6" sx={{
-                  fontSize: '15px',
-                  color: 'text.secondary'
-                }}>
-                  🗓️ Available Courses
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography variant="h6" sx={{
+                    fontSize: '15px',
+                    color: 'text.secondary'
+                  }}>
+                    🗓️ Available Courses
+                  </Typography>
+                  
+                  {/* Layout Button */}
+                  <IconButton
+                    size="small"
+                    onClick={(e) => setLayoutMenuAnchor({ ...layoutMenuAnchor, available: e.currentTarget })}
+                    sx={{
+                      padding: '4px',
+                      color: 'text.secondary',
+                      '&:hover': {
+                        backgroundColor: (theme) => theme.palette.mode === 'dark' ? '#2a3c55' : '#e5e7eb',
+                      },
+                    }}
+                  >
+                    {scheduleLayout === 'horizontal' ? <ViewColumn /> : <ViewAgenda />}
+                  </IconButton>
+                  <Menu
+                    anchorEl={layoutMenuAnchor.available}
+                    open={!!layoutMenuAnchor.available}
+                    onClose={() => setLayoutMenuAnchor({ ...layoutMenuAnchor, available: null })}
+                    anchorOrigin={{
+                      vertical: 'bottom',
+                      horizontal: 'left',
+                    }}
+                    transformOrigin={{
+                      vertical: 'top',
+                      horizontal: 'left',
+                    }}
+                  >
+                    <MenuItem
+                      onClick={() => {
+                        setScheduleLayout('horizontal');
+                        setLayoutMenuAnchor({ ...layoutMenuAnchor, available: null });
+                      }}
+                    >
+                      <ListItemIcon>
+                        <ViewColumn fontSize="small" />
+                      </ListItemIcon>
+                      <ListItemText>Horizontal Layout</ListItemText>
+                    </MenuItem>
+                    <MenuItem
+                      onClick={() => {
+                        setScheduleLayout('vertical');
+                        setLayoutMenuAnchor({ ...layoutMenuAnchor, available: null });
+                      }}
+                    >
+                      <ListItemIcon>
+                        <ViewAgenda fontSize="small" />
+                      </ListItemIcon>
+                      <ListItemText>Vertical Layout</ListItemText>
+                    </MenuItem>
+                  </Menu>
+                </Box>
                 
                 {/* Opacity Control Menu */}
                 <Box sx={{ position: 'relative' }}>
@@ -1490,13 +1896,202 @@ function App() {
                 alignItems: 'center',
                 marginBottom: '8px'
               }}>
-                <Typography variant="h6" sx={{
-                  margin: '4px 8px 8px 8px',
-                  fontSize: '15px',
-                  color: 'text.secondary'
-                }}>
-                  ✅ My Schedule
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
+                  <Typography variant="h6" sx={{
+                    margin: '4px 8px 8px 8px',
+                    fontSize: '15px',
+                    color: 'text.secondary'
+                  }}>
+                    ✅ My Schedule
+                  </Typography>
+                  
+                  {/* Saved Schedules Dropdown */}
+                  {savedSchedules.length > 0 && (
+                    <FormControl size="small" sx={{ minWidth: 150, mr: 1 }}>
+                      <Select
+                        value={selectedScheduleId}
+                        onChange={(e) => {
+                          const id = e.target.value as string;
+                          setSelectedScheduleId(id);
+                          if (id) {
+                            handleLoadSavedSchedule(id);
+                          }
+                        }}
+                        displayEmpty
+                        sx={{
+                          fontSize: '12px',
+                          height: '28px',
+                        }}
+                      >
+                        <MenuItem value="">
+                          <em>Current Schedule</em>
+                        </MenuItem>
+                        {savedSchedules.map((schedule) => (
+                          <MenuItem key={schedule.id} value={schedule.id}>
+                            {schedule.name}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  )}
+                  
+                  {/* Edit Button */}
+                  {selectedScheduleId && (
+                    <Tooltip title="Edit Schedule">
+                      <IconButton
+                        size="small"
+                        onClick={handleEditSchedule}
+                        sx={{
+                          padding: '4px',
+                          color: 'text.secondary',
+                          '&:hover': {
+                            backgroundColor: (theme) => theme.palette.mode === 'dark' ? '#2a3c55' : '#e5e7eb',
+                          },
+                        }}
+                      >
+                        <Edit fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  )}
+                  
+                  {/* Compare Button with Menu */}
+                  {savedSchedules.length >= 2 && !compareMode && (
+                    <>
+                      <Tooltip title="Compare Schedules">
+                        <IconButton
+                          size="small"
+                          onClick={(e) => setCompareMenuAnchor(e.currentTarget)}
+                          sx={{
+                            padding: '4px',
+                            color: 'text.secondary',
+                            '&:hover': {
+                              backgroundColor: (theme) => theme.palette.mode === 'dark' ? '#2a3c55' : '#e5e7eb',
+                            },
+                          }}
+                        >
+                          <CompareArrows fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Menu
+                        anchorEl={compareMenuAnchor}
+                        open={!!compareMenuAnchor}
+                        onClose={() => setCompareMenuAnchor(null)}
+                        anchorOrigin={{
+                          vertical: 'bottom',
+                          horizontal: 'left',
+                        }}
+                        transformOrigin={{
+                          vertical: 'top',
+                          horizontal: 'left',
+                        }}
+                        PaperProps={{
+                          sx: {
+                            minWidth: 300,
+                            p: 2,
+                          }
+                        }}
+                      >
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
+                            Select Schedules to Compare
+                          </Typography>
+                          <FormControl size="small" fullWidth>
+                            <InputLabel>Schedule 1</InputLabel>
+                            <Select
+                              value={compareSchedule1Id}
+                              onChange={(e) => setCompareSchedule1Id(e.target.value as string)}
+                              label="Schedule 1"
+                            >
+                              {savedSchedules.map((schedule) => (
+                                <MenuItem key={schedule.id} value={schedule.id}>
+                                  {schedule.name}
+                                </MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                          <Typography variant="body2" sx={{ textAlign: 'center', color: 'text.secondary' }}>
+                            vs
+                          </Typography>
+                          <FormControl size="small" fullWidth>
+                            <InputLabel>Schedule 2</InputLabel>
+                            <Select
+                              value={compareSchedule2Id}
+                              onChange={(e) => setCompareSchedule2Id(e.target.value as string)}
+                              label="Schedule 2"
+                            >
+                              {savedSchedules.map((schedule) => (
+                                <MenuItem key={schedule.id} value={schedule.id}>
+                                  {schedule.name}
+                                </MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                          <Button
+                            variant="contained"
+                            onClick={handleStartCompare}
+                            disabled={!compareSchedule1Id || !compareSchedule2Id || compareSchedule1Id === compareSchedule2Id}
+                            fullWidth
+                            startIcon={<CompareArrows />}
+                            sx={{ mt: 1 }}
+                          >
+                            Compare
+                          </Button>
+                        </Box>
+                      </Menu>
+                    </>
+                  )}
+                  
+                  {/* Layout Button */}
+                  <IconButton
+                    size="small"
+                    onClick={(e) => setLayoutMenuAnchor({ ...layoutMenuAnchor, mySchedule: e.currentTarget })}
+                    sx={{
+                      padding: '4px',
+                      color: 'text.secondary',
+                      '&:hover': {
+                        backgroundColor: (theme) => theme.palette.mode === 'dark' ? '#2a3c55' : '#e5e7eb',
+                      },
+                    }}
+                  >
+                    {scheduleLayout === 'horizontal' ? <ViewColumn /> : <ViewAgenda />}
+                  </IconButton>
+                  <Menu
+                    anchorEl={layoutMenuAnchor.mySchedule}
+                    open={!!layoutMenuAnchor.mySchedule}
+                    onClose={() => setLayoutMenuAnchor({ ...layoutMenuAnchor, mySchedule: null })}
+                    anchorOrigin={{
+                      vertical: 'bottom',
+                      horizontal: 'left',
+                    }}
+                    transformOrigin={{
+                      vertical: 'top',
+                      horizontal: 'left',
+                    }}
+                  >
+                    <MenuItem
+                      onClick={() => {
+                        setScheduleLayout('horizontal');
+                        setLayoutMenuAnchor({ ...layoutMenuAnchor, mySchedule: null });
+                      }}
+                    >
+                      <ListItemIcon>
+                        <ViewColumn fontSize="small" />
+                      </ListItemIcon>
+                      <ListItemText>Horizontal Layout</ListItemText>
+                    </MenuItem>
+                    <MenuItem
+                      onClick={() => {
+                        setScheduleLayout('vertical');
+                        setLayoutMenuAnchor({ ...layoutMenuAnchor, mySchedule: null });
+                      }}
+                    >
+                      <ListItemIcon>
+                        <ViewAgenda fontSize="small" />
+                      </ListItemIcon>
+                      <ListItemText>Vertical Layout</ListItemText>
+                    </MenuItem>
+                  </Menu>
+                </Box>
                 <Typography variant="body2" sx={{
                   margin: '0 8px 8px 8px',
                   fontSize: '14px',
@@ -1511,71 +2106,93 @@ function App() {
                 }}>
                   {totalUnits} Units
                 </Typography>
-                <Box sx={{ display: 'flex', gap: 1 }}>
-                  <Button
-                    variant="contained"
-                    size="small"
-                    onClick={handleCreateCustomBlock}
-                    sx={{
-                      background: 'warning.main',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      padding: '6px 12px',
-                      fontSize: '12px',
-                      textTransform: 'none'
+                <Box sx={{ display: 'flex', gap: 0.5 }}>
+                  <Tooltip title="Create Custom Block">
+                    <IconButton
+                      size="small"
+                      onClick={handleCreateCustomBlock}
+                      sx={{
+                        background: 'warning.main',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '6px',
+                        '&:hover': {
+                          background: 'warning.dark',
+                        },
+                      }}
+                    >
+                      <Add fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Save / Load Schedule">
+                    <IconButton
+                      size="small"
+                      onClick={handleSaveLoadSchedule}
+                      sx={{
+                        background: 'secondary.main',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '6px',
+                        '&:hover': {
+                          background: 'secondary.dark',
+                        },
+                      }}
+                    >
+                      <Save fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                  <Menu
+                    anchorEl={saveLoadMenuAnchor}
+                    open={!!saveLoadMenuAnchor}
+                    onClose={() => setSaveLoadMenuAnchor(null)}
+                    anchorOrigin={{
+                      vertical: 'bottom',
+                      horizontal: 'left',
+                    }}
+                    transformOrigin={{
+                      vertical: 'top',
+                      horizontal: 'left',
                     }}
                   >
-                    ➕ Create
-                  </Button>
-                  <Button
-                    variant="contained"
-                    size="small"
-                    onClick={handleSaveSchedule}
-                    sx={{
-                      background: 'secondary.main',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      padding: '6px 12px',
-                      fontSize: '12px',
-                      textTransform: 'none'
-                    }}
-                  >
-                    💾 Save
-                  </Button>
-                  <Button
-                    variant="contained"
-                    size="small"
-                    onClick={handleLoadSchedule}
-                    sx={{
-                      background: 'success.main',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      padding: '6px 12px',
-                      fontSize: '12px',
-                      textTransform: 'none'
-                    }}
-                  >
-                    📂 Load
-                  </Button>
-                  <Button
-                    variant="contained"
-                    size="small"
-                    onClick={handlePrintSchedule}
-                    sx={{
-                      background: 'primary.main',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      padding: '6px 12px',
-                      fontSize: '12px',
-                      textTransform: 'none'
-                    }}
-                  >
-                    🖨️ Print Schedule
-                  </Button>
+                    <MenuItem onClick={handleSaveScheduleClick}>
+                      <ListItemIcon>
+                        <Save fontSize="small" />
+                      </ListItemIcon>
+                      <ListItemText>Save</ListItemText>
+                    </MenuItem>
+                    <MenuItem onClick={handleShareScheduleClick}>
+                      <ListItemIcon>
+                        <Share fontSize="small" />
+                      </ListItemIcon>
+                      <ListItemText>Share</ListItemText>
+                    </MenuItem>
+                    <MenuItem onClick={handleLoadScheduleClick}>
+                      <ListItemIcon>
+                        <FolderOpen fontSize="small" />
+                      </ListItemIcon>
+                      <ListItemText>Load</ListItemText>
+                    </MenuItem>
+                  </Menu>
+                  <Tooltip title="Print Schedule">
+                    <IconButton
+                      size="small"
+                      onClick={handlePrintSchedule}
+                      sx={{
+                        background: 'primary.main',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '6px',
+                        '&:hover': {
+                          background: 'primary.dark',
+                        },
+                      }}
+                    >
+                      <Print fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
                 </Box>
               </Box>
               <ScheduleGrid
@@ -1626,6 +2243,7 @@ function App() {
               />
             </Box>
           </Box>
+          )}
         </Box>
       </Box>
 
@@ -1646,21 +2264,118 @@ function App() {
           parsedData={appState.allCourses}
         />
 
-      {/* Save Modal */}
-      <SaveModal
-        open={saveModalOpen}
-        onClose={() => setSaveModalOpen(false)}
+      {/* Save/Load Modal */}
+      <SaveLoadModal
+        open={saveLoadModalOpen}
+        onClose={() => setSaveLoadModalOpen(false)}
         mySchedule={appState.mySchedule}
         myOnlineClasses={appState.myOnlineClasses}
         customBlocks={appState.customBlocks}
+        onLoadSchedule={handleLoadEncodedSchedule}
+        initialTab={saveLoadModalTab}
       />
 
-      {/* Load Modal */}
-      <LoadModal
-        open={loadModalOpen}
-        onClose={() => setLoadModalOpen(false)}
-        onLoadSchedule={handleLoadEncodedSchedule}
-      />
+      {/* Save Schedule Modal */}
+      <Dialog
+        open={saveScheduleModalOpen}
+        onClose={() => {
+          setSaveScheduleModalOpen(false);
+          setScheduleName('');
+          setEditingScheduleId(null);
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          {editingScheduleId ? 'Edit Schedule' : 'Save Schedule'}
+        </DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Schedule Name"
+            fullWidth
+            variant="outlined"
+            value={scheduleName}
+            onChange={(e) => setScheduleName(e.target.value)}
+            onKeyPress={(e) => {
+              if (e.key === 'Enter') {
+                handleSaveSchedule();
+              }
+            }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => {
+            setSaveScheduleModalOpen(false);
+            setScheduleName('');
+            setEditingScheduleId(null);
+          }}>
+            Cancel
+          </Button>
+          <Button onClick={handleSaveSchedule} variant="contained">
+            {editingScheduleId ? 'Update' : 'Save'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Edit Schedule Modal */}
+      <Dialog
+        open={editScheduleModalOpen}
+        onClose={() => {
+          setEditScheduleModalOpen(false);
+          setScheduleName('');
+          setEditingScheduleId(null);
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Edit Schedule</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Schedule Name"
+            fullWidth
+            variant="outlined"
+            value={scheduleName}
+            onChange={(e) => setScheduleName(e.target.value)}
+            onKeyPress={(e) => {
+              if (e.key === 'Enter') {
+                handleRenameSchedule();
+              }
+            }}
+          />
+          <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
+            <Button
+              color="error"
+              startIcon={<Delete />}
+              onClick={() => {
+                if (editingScheduleId) {
+                  handleDeleteSchedule(editingScheduleId);
+                  setEditScheduleModalOpen(false);
+                  setScheduleName('');
+                  setEditingScheduleId(null);
+                }
+              }}
+            >
+              Delete Schedule
+            </Button>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => {
+            setEditScheduleModalOpen(false);
+            setScheduleName('');
+            setEditingScheduleId(null);
+          }}>
+            Cancel
+          </Button>
+          <Button onClick={handleRenameSchedule} variant="contained">
+            Update
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Custom Block Modal */}
       <CustomBlockModal
