@@ -37,6 +37,13 @@ interface CustomTimeBlock {
 }
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+
+const BLOCK_COLORS = [
+  '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
+  '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9',
+  '#E74C3C', '#3498DB', '#2ECC71', '#9B59B6', '#F39C12'
+];
+
 const TIME_OPTIONS = [
   '6:00 AM', '6:30 AM', '7:00 AM', '7:30 AM', '8:00 AM', '8:30 AM',
   '9:00 AM', '9:30 AM', '10:00 AM', '10:30 AM', '11:00 AM', '11:30 AM',
@@ -53,6 +60,7 @@ const CustomBlockModal: React.FC<CustomBlockModalProps> = ({ open, onClose, onSa
   const [useSameTimes, setUseSameTimes] = useState(false);
   const [globalStartTime, setGlobalStartTime] = useState('9:00 AM');
   const [globalEndTime, setGlobalEndTime] = useState('10:00 AM');
+  const [color, setColor] = useState(BLOCK_COLORS[0]);
 
   // Reset form when modal opens or populate when editing
   useEffect(() => {
@@ -62,6 +70,7 @@ const CustomBlockModal: React.FC<CustomBlockModalProps> = ({ open, onClose, onSa
         setTitle(editingBlock.title);
         setSelectedDays(editingBlock.days);
         setTimes(editingBlock.times);
+        setColor(editingBlock.color || BLOCK_COLORS[0]);
         
         // Check if all days have the same times
         const dayTimes = Object.values(editingBlock.times);
@@ -85,6 +94,7 @@ const CustomBlockModal: React.FC<CustomBlockModalProps> = ({ open, onClose, onSa
         setUseSameTimes(false);
         setGlobalStartTime('9:00 AM');
         setGlobalEndTime('10:00 AM');
+        setColor(BLOCK_COLORS[Math.floor(Math.random() * BLOCK_COLORS.length)]);
       }
     }
   }, [open, editingBlock]);
@@ -169,19 +179,12 @@ const CustomBlockModal: React.FC<CustomBlockModalProps> = ({ open, onClose, onSa
       return;
     }
 
-    // Generate a unique color for the block
-    const colors = [
-      '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
-      '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9'
-    ];
-    const color = colors[Math.floor(Math.random() * colors.length)];
-
     const customBlock: CustomTimeBlock = {
       id: editingBlock ? editingBlock.id : `custom_${Date.now()}`,
       title: title.trim(),
       days: selectedDays,
       times,
-      color: editingBlock ? editingBlock.color : color
+      color
     };
 
     onSave(customBlock);
@@ -227,6 +230,53 @@ const CustomBlockModal: React.FC<CustomBlockModalProps> = ({ open, onClose, onSa
               variant="outlined"
               size="small"
             />
+          </Box>
+
+          {/* Color Selection */}
+          <Box>
+            <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 600 }}>
+              Block Color
+            </Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
+              {BLOCK_COLORS.map((c) => (
+                <Box
+                  key={c}
+                  onClick={() => setColor(c)}
+                  sx={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: '50%',
+                    backgroundColor: c,
+                    border: color === c ? '3px solid' : '2px solid transparent',
+                    borderColor: color === c ? 'primary.main' : 'transparent',
+                    cursor: 'pointer',
+                    boxSizing: 'border-box',
+                    '&:hover': {
+                      opacity: 0.9,
+                      transform: 'scale(1.1)',
+                    },
+                    transition: 'transform 0.15s ease',
+                  }}
+                />
+              ))}
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: 1 }}>
+                <Typography variant="body2" sx={{ color: 'text.secondary' }}>Custom:</Typography>
+                <input
+                  type="color"
+                  value={color}
+                  onChange={(e) => setColor(e.target.value)}
+                  style={{
+                    width: 28,
+                    height: 28,
+                    padding: 0,
+                    border: 'none',
+                    borderRadius: '50%',
+                    cursor: 'pointer',
+                    backgroundColor: 'transparent',
+                  }}
+                />
+              </Box>
+            </Box>
           </Box>
 
           <Divider />
