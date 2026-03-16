@@ -14,6 +14,7 @@ import {
   Collapse,
 } from '@mui/material';
 import { Close, ContentPaste, ExpandMore, ExpandLess } from '@mui/icons-material';
+import scheduleConfig from '../scheduleConfig.json';
 
 interface ImportModalProps {
   open: boolean;
@@ -48,6 +49,8 @@ const ImportModal: React.FC<ImportModalProps> = ({
 }) => {
   const [currentStep, setCurrentStep] = useState<'parse' | 'select'>('parse');
   const [subjectsExpanded, setSubjectsExpanded] = useState(true);
+
+  const scheduleLabel = `${scheduleConfig.term} ${scheduleConfig.year}`;
 
   // Debug logging
   React.useEffect(() => {
@@ -300,13 +303,16 @@ const ImportModal: React.FC<ImportModalProps> = ({
                   border: (theme) => theme.palette.mode === 'dark' ? '1px solid #2a3c55' : '1px solid #e5e7eb',
                   maxWidth: '400px',
                 }}>
-                  <Typography variant="body2" sx={{ 
-                    fontSize: '13px', 
-                    color: 'text.secondary',
-                    textAlign: 'center',
-                    mb: 1
-                  }}>
-                    Having trouble with clipboard? Use our basic schedule instead:
+                  <Typography
+                    variant="body2"
+                    sx={{ 
+                      fontSize: '13px', 
+                      color: 'text.secondary',
+                      textAlign: 'center',
+                      mb: 1
+                    }}
+                  >
+                    Having trouble with clipboard? Use our {scheduleLabel} basic schedule instead:
                   </Typography>
                   
                   <Button
@@ -335,15 +341,18 @@ const ImportModal: React.FC<ImportModalProps> = ({
                   </Button>
 
                   
-                  <Typography variant="caption" sx={{ 
-                    fontSize: '11px', 
-                    color: 'text.secondary',
-                    textAlign: 'center',
-                    fontStyle: 'italic',
-                    maxWidth: '350px',
-                    lineHeight: 1.4
-                  }}>
-                    ⚠️ Basic schedule shows course times and locations but not current enrollment data. 
+                  <Typography
+                    variant="caption"
+                    sx={{ 
+                      fontSize: '11px', 
+                      color: 'text.secondary',
+                      textAlign: 'center',
+                      fontStyle: 'italic',
+                      maxWidth: '350px',
+                      lineHeight: 1.4
+                    }}
+                  >
+                    ⚠️ The {scheduleLabel} basic schedule shows course times and locations but not current enrollment data. 
                     Check the official course search website for up-to-date availability.
                   </Typography>
                 </Box>

@@ -34,6 +34,7 @@ import {
   Edit,
   Delete,
 } from '@mui/icons-material';
+import scheduleConfig from './scheduleConfig.json';
 import { AppState, FilterState, SubjectData, CustomTimeBlock, SavedSchedule } from './types';
 import FilterPanel from './components/FilterPanel';
 import ScheduleGrid from './components/ScheduleGrid';
@@ -180,6 +181,8 @@ function App() {
   const [compareSchedule1Id, setCompareSchedule1Id] = useState<string | ''>('');
   const [compareSchedule2Id, setCompareSchedule2Id] = useState<string | ''>('');
   const [compareMenuAnchor, setCompareMenuAnchor] = useState<HTMLElement | null>(null);
+
+  const scheduleLabel = `${scheduleConfig.term} ${scheduleConfig.year}`;
 
   // Update CSS custom property when courseOpacity changes
   useEffect(() => {
@@ -1393,11 +1396,11 @@ function App() {
             : 'rgba(255,255,255,0.9)',
           backdropFilter: 'blur(6px)'
         }}>
-          <Typography variant="h6" sx={{ fontSize: '18px', margin: '0 0 6px 0' }}>
-            📚 Student Schedule Builder
+          <Typography variant="h6" sx={{ fontSize: '18px', margin: '0 0 4px 0' }}>
+            📚 Student Schedule Builder — {scheduleLabel}
           </Typography>
           <Typography variant="body2" sx={{ fontSize: '13px', color: 'text.secondary' }}>
-            Paste the schedule HTML table to view and build your personalized course schedule.
+            Paste the schedule HTML table or use the {scheduleLabel} basic schedule to build your personalized course schedule.
           </Typography>
         </Box>
         
