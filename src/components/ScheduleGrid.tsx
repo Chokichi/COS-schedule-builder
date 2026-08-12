@@ -76,14 +76,14 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
             Subject: 'Custom',
             Course: 'Block',
             Title: block.title,
-            Instructor: 'Custom',
+            Instructor: block.instructor || '',
             Days: dayCode,
             DispTime: `${start} - ${end}`,
             StartMin: startMin,
             EndMin: endMin,
             Units: 0,
-            Campus: 'Custom',
-            Location: 'Custom',
+            Campus: block.campus || '',
+            Location: block.location || '',
             Capacity: 0,
             Actual: 0,
             Remaining: 0,
@@ -92,7 +92,9 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
             WaitRem: 0,
             __color: block.color,
             __bg: block.color,
-            isCustomBlock: true
+            isCustomBlock: true,
+            customCrn: block.crn,
+            customField: block.customField,
           });
         }
       });
@@ -441,6 +443,26 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
                 <Typography variant="body2" sx={{ mt: 0.5 }}>
                   Custom Time Block
                 </Typography>
+                {displayCourse.customCrn && (
+                  <Typography variant="body2">
+                    CRN: {displayCourse.customCrn}
+                  </Typography>
+                )}
+                {displayCourse.Instructor && (
+                  <Typography variant="body2">
+                    {displayCourse.Instructor}
+                  </Typography>
+                )}
+                {(displayCourse.Location || displayCourse.Campus) && (
+                  <Typography variant="body2">
+                    {[displayCourse.Location, displayCourse.Campus].filter(Boolean).join(' • ')}
+                  </Typography>
+                )}
+                {displayCourse.customField && (
+                  <Typography variant="body2">
+                    {displayCourse.customField}
+                  </Typography>
+                )}
                 <Typography variant="body2">
                   {displayCourse.Days} {displayCourse.DispTime}
                 </Typography>
@@ -492,7 +514,7 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
                       transition: 'all 0.2s ease',
                     }}
                   >
-                    {idx + 1}. {overlappingCourse.isCustomBlock ? overlappingCourse.Title : `${overlappingCourse.Subject} ${overlappingCourse.Course}`} - {overlappingCourse.isCustomBlock ? 'Custom Block' : (overlappingCourse.Instructor || 'TBA')}
+                    {idx + 1}. {overlappingCourse.isCustomBlock ? overlappingCourse.Title : `${overlappingCourse.Subject} ${overlappingCourse.Course}`} - {overlappingCourse.isCustomBlock ? (overlappingCourse.Instructor || 'Custom Block') : (overlappingCourse.Instructor || 'TBA')}
                   </Box>
                 ))}
                 <Typography variant="caption" sx={{ mt: 1, display: 'block', fontStyle: 'italic' }}>
@@ -597,23 +619,46 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
               {course.isCustomBlock ? course.Title : `${course.Subject} ${course.Course}`}
             </Typography>
             
-            {/* CRN Tag - only for regular courses */}
-            {!course.isCustomBlock && (
-              <Box
-                sx={{
-                  display: 'inline-block',
-                  fontSize: '8px',
-                  padding: '1px 4px',
-                  borderRadius: '6px',
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  background: 'rgba(255,255,255,0.1)',
-                  alignSelf: 'flex-start',
-                  marginBottom: '2px',
-                }}
-              >
-                {course.CRN}
-              </Box>
-            )}
+            {/* Tags: Custom tag and/or CRN */}
+            <Box
+              sx={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '4px',
+                marginBottom: '2px',
+              }}
+            >
+              {course.isCustomBlock && (
+                <Box
+                  sx={{
+                    display: 'inline-block',
+                    fontSize: '8px',
+                    padding: '1px 4px',
+                    borderRadius: '6px',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    background: 'rgba(255,255,255,0.1)',
+                    alignSelf: 'flex-start',
+                  }}
+                >
+                  Custom
+                </Box>
+              )}
+              {(!course.isCustomBlock || course.customCrn) && (
+                <Box
+                  sx={{
+                    display: 'inline-block',
+                    fontSize: '8px',
+                    padding: '1px 4px',
+                    borderRadius: '6px',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    background: 'rgba(255,255,255,0.1)',
+                    alignSelf: 'flex-start',
+                  }}
+                >
+                  {course.isCustomBlock ? course.customCrn : course.CRN}
+                </Box>
+              )}
+            </Box>
             
             {/* Time */}
             <Typography
@@ -631,19 +676,72 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
             </Typography>
             
             {/* Instructor */}
-            <Typography
-              variant="caption"
-              sx={{
-                fontSize: '8px',
-                display: 'block',
-                color: '#d7e3ff',
-                opacity: 0.9,
-                lineHeight: 1.2,
-                marginBottom: '2px',
-              }}
-            >
-              {course.Instructor || 'TBA'}
-            </Typography>
+            {(!course.isCustomBlock || course.Instructor) && (
+              <Typography
+                variant="caption"
+                sx={{
+                  fontSize: '8px',
+                  display: 'block',
+                  color: '#d7e3ff',
+                  opacity: 0.9,
+                  lineHeight: 1.2,
+                  marginBottom: '2px',
+                }}
+              >
+                {course.isCustomBlock ? course.Instructor : (course.Instructor || 'TBA')}
+              </Typography>
+            )}
+
+            {/* Location - custom blocks only when filled */}
+            {course.isCustomBlock && course.Location && (
+              <Typography
+                variant="caption"
+                sx={{
+                  fontSize: '8px',
+                  display: 'block',
+                  color: '#d7e3ff',
+                  opacity: 0.9,
+                  lineHeight: 1.2,
+                  marginBottom: '2px',
+                }}
+              >
+                {course.Location}
+              </Typography>
+            )}
+
+            {/* Campus - custom blocks only when filled */}
+            {course.isCustomBlock && course.Campus && (
+              <Typography
+                variant="caption"
+                sx={{
+                  fontSize: '8px',
+                  display: 'block',
+                  color: '#d7e3ff',
+                  opacity: 0.9,
+                  lineHeight: 1.2,
+                  marginBottom: '2px',
+                }}
+              >
+                {course.Campus}
+              </Typography>
+            )}
+
+            {/* Custom freeform field - displayed last */}
+            {course.isCustomBlock && course.customField && (
+              <Typography
+                variant="caption"
+                sx={{
+                  fontSize: '8px',
+                  display: 'block',
+                  color: '#d7e3ff',
+                  opacity: 0.9,
+                  lineHeight: 1.2,
+                  marginBottom: '2px',
+                }}
+              >
+                {course.customField}
+              </Typography>
+            )}
             
             {/* Overlapping Course Indicator */}
             {isOverlapping && (

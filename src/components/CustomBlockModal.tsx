@@ -19,6 +19,7 @@ import {
   Divider
 } from '@mui/material';
 import { Close, Delete } from '@mui/icons-material';
+import { CustomTimeBlock } from '../types';
 
 interface CustomBlockModalProps {
   open: boolean;
@@ -28,13 +29,23 @@ interface CustomBlockModalProps {
   editingBlock?: CustomTimeBlock | null;
 }
 
-interface CustomTimeBlock {
-  id: string;
-  title: string;
-  days: string[];
-  times: { [key: string]: { start: string; end: string } };
-  color: string;
-}
+type ExtraFieldKey = 'instructor' | 'crn' | 'location' | 'campus' | 'customField';
+
+const EXTRA_FIELD_OPTIONS: { key: ExtraFieldKey; label: string; placeholder: string }[] = [
+  { key: 'instructor', label: 'Instructor', placeholder: 'e.g., Jane Smith' },
+  { key: 'crn', label: 'CRN', placeholder: 'e.g., 12345' },
+  { key: 'location', label: 'Location', placeholder: 'e.g., Building 1, Room 101' },
+  { key: 'campus', label: 'Campus', placeholder: 'e.g., Main Campus' },
+  { key: 'customField', label: 'Custom Field', placeholder: 'Any additional information...' },
+];
+
+const EMPTY_EXTRA_VALUES: Record<ExtraFieldKey, string> = {
+  instructor: '',
+  crn: '',
+  location: '',
+  campus: '',
+  customField: '',
+};
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
@@ -61,6 +72,8 @@ const CustomBlockModal: React.FC<CustomBlockModalProps> = ({ open, onClose, onSa
   const [globalStartTime, setGlobalStartTime] = useState('9:00 AM');
   const [globalEndTime, setGlobalEndTime] = useState('10:00 AM');
   const [color, setColor] = useState(BLOCK_COLORS[0]);
+  const [enabledFields, setEnabledFields] = useState<Set<ExtraFieldKey>>(new Set());
+  const [extraValues, setExtraValues] = useState<Record<ExtraFieldKey, string>>(EMPTY_EXTRA_VALUES);
 
   // Reset form when modal opens or populate when editing
   useEffect(() => {
@@ -71,6 +84,18 @@ const CustomBlockModal: React.FC<CustomBlockModalProps> = ({ open, onClose, onSa
         setSelectedDays(editingBlock.days);
         setTimes(editingBlock.times);
         setColor(editingBlock.color || BLOCK_COLORS[0]);
+
+        const nextEnabled = new Set<ExtraFieldKey>();
+        const nextValues = { ...EMPTY_EXTRA_VALUES };
+        EXTRA_FIELD_OPTIONS.forEach(({ key }) => {
+          const value = editingBlock[key];
+          if (value) {
+            nextEnabled.add(key);
+            nextValues[key] = value;
+          }
+        });
+        setEnabledFields(nextEnabled);
+        setExtraValues(nextValues);
         
         // Check if all days have the same times
         const dayTimes = Object.values(editingBlock.times);
@@ -95,9 +120,24 @@ const CustomBlockModal: React.FC<CustomBlockModalProps> = ({ open, onClose, onSa
         setGlobalStartTime('9:00 AM');
         setGlobalEndTime('10:00 AM');
         setColor(BLOCK_COLORS[Math.floor(Math.random() * BLOCK_COLORS.length)]);
+        setEnabledFields(new Set());
+        setExtraValues(EMPTY_EXTRA_VALUES);
       }
     }
   }, [open, editingBlock]);
+
+  const handleToggleExtraField = (key: ExtraFieldKey) => {
+    setEnabledFields(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+        setExtraValues(values => ({ ...values, [key]: '' }));
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
 
   const handleDayToggle = (day: string) => {
     setSelectedDays(prev => {
@@ -187,6 +227,12 @@ const CustomBlockModal: React.FC<CustomBlockModalProps> = ({ open, onClose, onSa
       color
     };
 
+    EXTRA_FIELD_OPTIONS.forEach(({ key }) => {
+      if (enabledFields.has(key) && extraValues[key].trim()) {
+        customBlock[key] = extraValues[key].trim();
+      }
+    });
+
     onSave(customBlock);
     onClose();
   };
@@ -195,7 +241,7 @@ const CustomBlockModal: React.FC<CustomBlockModalProps> = ({ open, onClose, onSa
     <Dialog 
       open={open} 
       onClose={onClose} 
-      maxWidth="xs" 
+      maxWidth="sm" 
       fullWidth
       PaperProps={{
         sx: { borderRadius: 2 }
@@ -392,6 +438,53 @@ const CustomBlockModal: React.FC<CustomBlockModalProps> = ({ open, onClose, onSa
                 </Box>
               ))}
             </Box>
+          </Box>
+
+          <Divider />
+
+          {/* Optional extra fields */}
+          <Box>
+            <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 600 }}>
+              Additional Fields
+            </Typography>
+            <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1.5, fontSize: '12px' }}>
+              Optionally add class-style details. Only filled fields appear on the time block.
+            </Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: enabledFields.size > 0 ? 2 : 0 }}>
+              {EXTRA_FIELD_OPTIONS.map(({ key, label }) => (
+                <Chip
+                  key={key}
+                  label={label}
+                  onClick={() => handleToggleExtraField(key)}
+                  color={enabledFields.has(key) ? 'primary' : 'default'}
+                  variant={enabledFields.has(key) ? 'filled' : 'outlined'}
+                  sx={{
+                    ...(enabledFields.has(key) && {
+                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                      color: 'white',
+                      '&:hover': {
+                        background: 'linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%)',
+                      }
+                    })
+                  }}
+                />
+              ))}
+            </Box>
+            {EXTRA_FIELD_OPTIONS.filter(({ key }) => enabledFields.has(key)).map(({ key, label, placeholder }) => (
+              <Box key={key} sx={{ mb: 1.5 }}>
+                <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5, fontSize: '13px' }}>
+                  {label}
+                </Typography>
+                <TextField
+                  fullWidth
+                  value={extraValues[key]}
+                  onChange={(e) => setExtraValues(prev => ({ ...prev, [key]: e.target.value }))}
+                  placeholder={placeholder}
+                  variant="outlined"
+                  size="small"
+                />
+              </Box>
+            ))}
           </Box>
         </Box>
       </DialogContent>

@@ -42,7 +42,7 @@ import OnlineCoursesList from './components/OnlineCoursesList';
 import ImportModal from './components/ImportModal';
 import SaveLoadModal from './components/SaveLoadModal';
 import CustomBlockModal from './components/CustomBlockModal';
-import { parseHtmlTable, loadBasicSchedule } from './utils/parser';
+import { parseHtmlTable, loadBasicSchedule, encodeCustomBlockForShare, decodeCustomBlockFromShare } from './utils/parser';
 
 const lightTheme = createTheme({
   palette: {
@@ -923,13 +923,7 @@ function App() {
       }
 
       // Convert custom blocks from encoded format
-      const customBlocks = decodedData.b ? decodedData.b.map((blockArray: any[]) => ({
-        id: blockArray[0],
-        title: blockArray[1],
-        days: blockArray[2],
-        times: blockArray[3],
-        color: blockArray[4]
-      })) : [];
+      const customBlocks = decodedData.b ? decodedData.b.map((blockArray: any[]) => decodeCustomBlockFromShare(blockArray)) : [];
 
       // Restore the schedule data
       setAppState(prev => ({
@@ -1066,13 +1060,7 @@ function App() {
           course.Subject,
           course.Course
         ]),
-        b: appState.customBlocks.map(block => [
-          block.id,
-          block.title,
-          block.days,
-          block.times,
-          block.color
-        ])
+        b: appState.customBlocks.map(block => encodeCustomBlockForShare(block))
       };
       const jsonString = JSON.stringify(scheduleData);
       return btoa(unescape(encodeURIComponent(jsonString)));
@@ -1230,6 +1218,9 @@ function App() {
                     <div class="slot" style="top: ${top}px; height: ${height}px; background: ${block.color}; border-color: ${block.color};">
                       <strong>${block.title}</strong>
                       <small>${formatTime(startTime, startMin)} - ${formatTime(endTime, endMin)}</small>
+                      ${block.instructor ? `<small>${block.instructor}</small>` : ''}
+                      ${block.location ? `<small>${block.location}</small>` : ''}
+                      ${block.customField ? `<small>${block.customField}</small>` : ''}
                     </div>
                   `;
                 }).join('')}
@@ -1310,14 +1301,14 @@ function App() {
                     <td>Custom Block</td>
                     <td>-</td>
                     <td>-</td>
-                    <td>${block.title}</td>
+                    <td>${block.title}${block.customField ? ` — ${block.customField}` : ''}</td>
+                    <td>${block.crn || '-'}</td>
                     <td>-</td>
-                    <td>-</td>
-                    <td>-</td>
+                    <td>${block.instructor || '-'}</td>
                     <td>${block.days.join('')}</td>
                     <td>${formatTimes()}</td>
-                    <td>-</td>
-                    <td>-</td>
+                    <td>${block.location || '-'}</td>
+                    <td>${block.campus || '-'}</td>
                   </tr>
                 `;
               }).join('')}

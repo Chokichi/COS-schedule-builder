@@ -1,4 +1,4 @@
-import { Course } from '../types';
+import { Course, CustomTimeBlock } from '../types';
 
 export function timeToMinutes(t: string): number | null {
   const m = t.trim().match(/^(\d{1,2}):(\d{2})\s*([APap][Mm])$/);
@@ -276,4 +276,36 @@ export function decodeScheduleData(encodedString: string): { c: any[], o: any[],
     console.error('Error decoding schedule data:', error);
     return null;
   }
+}
+
+export function encodeCustomBlockForShare(block: CustomTimeBlock): any[] {
+  const encoded: any[] = [block.id, block.title, block.days, block.times, block.color];
+  const extras: Record<string, string> = {};
+  if (block.instructor) extras.instructor = block.instructor;
+  if (block.crn) extras.crn = block.crn;
+  if (block.location) extras.location = block.location;
+  if (block.campus) extras.campus = block.campus;
+  if (block.customField) extras.customField = block.customField;
+  if (Object.keys(extras).length > 0) {
+    encoded.push(extras);
+  }
+  return encoded;
+}
+
+export function decodeCustomBlockFromShare(blockArray: any[]): CustomTimeBlock {
+  const extras = blockArray[5] && typeof blockArray[5] === 'object' && !Array.isArray(blockArray[5])
+    ? blockArray[5]
+    : {};
+  return {
+    id: blockArray[0],
+    title: blockArray[1],
+    days: blockArray[2],
+    times: blockArray[3],
+    color: blockArray[4],
+    ...(extras.instructor ? { instructor: extras.instructor } : {}),
+    ...(extras.crn ? { crn: extras.crn } : {}),
+    ...(extras.location ? { location: extras.location } : {}),
+    ...(extras.campus ? { campus: extras.campus } : {}),
+    ...(extras.customField ? { customField: extras.customField } : {}),
+  };
 }

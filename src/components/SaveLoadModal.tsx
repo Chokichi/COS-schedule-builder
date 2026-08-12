@@ -19,6 +19,7 @@ import { Close, ContentCopy, Check, ContentPaste, QrCodeScanner, FlipCameraIos }
 import QRCode from 'qrcode';
 import QrReader from 'react-qr-scanner';
 import { Course, CustomTimeBlock } from '../types';
+import { encodeCustomBlockForShare } from '../utils/parser';
 
 interface SaveLoadModalProps {
   open: boolean;
@@ -81,13 +82,7 @@ const SaveLoadModal: React.FC<SaveLoadModalProps> = ({
           course.Subject,
           course.Course
         ]),
-        b: customBlocks.map(block => [
-          block.id,
-          block.title,
-          block.days,
-          block.times,
-          block.color
-        ])
+        b: customBlocks.map(block => encodeCustomBlockForShare(block))
       };
 
       const jsonString = JSON.stringify(scheduleData);

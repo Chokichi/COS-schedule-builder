@@ -21,6 +21,8 @@ export interface Course {
   __bg: string;
   isLabSection?: boolean;
   isCustomBlock?: boolean;
+  customCrn?: string;
+  customField?: string;
 }
 
 export interface CustomTimeBlock {
@@ -29,6 +31,11 @@ export interface CustomTimeBlock {
   days: string[];
   times: { [key: string]: { start: string; end: string } };
   color: string;
+  instructor?: string;
+  crn?: string;
+  location?: string;
+  campus?: string;
+  customField?: string;
 }
 
 export interface SavedSchedule {

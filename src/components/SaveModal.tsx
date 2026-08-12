@@ -16,6 +16,7 @@ import {
 import { Close, ContentCopy, Check } from '@mui/icons-material';
 import QRCode from 'qrcode';
 import { Course, CustomTimeBlock } from '../types';
+import { encodeCustomBlockForShare } from '../utils/parser';
 import { useCallback } from 'react';
 
 interface SaveModalProps {
@@ -52,13 +53,7 @@ const SaveModal: React.FC<SaveModalProps> = ({ open, onClose, mySchedule, myOnli
           course.Subject,
           course.Course
         ]), // Store CRN + subject/course for online courses
-        b: customBlocks.map(block => [
-          block.id,
-          block.title,
-          block.days,
-          block.times,
-          block.color
-        ]) // Store custom blocks
+        b: customBlocks.map(block => encodeCustomBlockForShare(block)) // Store custom blocks
       };
 
       // Use simple base64 encoding (without compression)
