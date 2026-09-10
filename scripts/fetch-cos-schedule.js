@@ -259,24 +259,44 @@ function sqlString(value) {
   return `'${String(value).replace(/'/g, "''")}'`;
 }
 
+// D1 rejects SQL statements over ~100KB (SQLITE_TOOBIG). Keep chunks well under that
+// after quoting. The full catalog JSON is ~400KB, which cannot fit in one INSERT.
+const D1_CHUNK_CHARS = 70_000;
+
 function writeSnapshotFiles(snapshot) {
   fs.mkdirSync(path.dirname(snapshotPath), { recursive: true });
   fs.writeFileSync(snapshotPath, JSON.stringify(snapshot) + '\n', 'utf8');
 
   const payload = JSON.stringify({ courses: snapshot.courses, online: snapshot.online });
-  const sql = `CREATE TABLE IF NOT EXISTS schedule_snapshot (
+  const chunks = [];
+  for (let i = 0; i < payload.length; i += D1_CHUNK_CHARS) {
+    chunks.push(payload.slice(i, i + D1_CHUNK_CHARS));
+  }
+
+  const statements = [
+    `CREATE TABLE IF NOT EXISTS schedule_snapshot (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   fetched_at TEXT NOT NULL,
   year INTEGER NOT NULL,
   term TEXT NOT NULL,
   term_code TEXT NOT NULL,
-  payload TEXT NOT NULL
-);
-INSERT OR REPLACE INTO schedule_snapshot (id, fetched_at, year, term, term_code, payload)
-VALUES (1, ${sqlString(snapshot.fetchedAt)}, ${snapshot.year}, ${sqlString(snapshot.term)}, ${sqlString(snapshot.termCode)}, ${sqlString(payload)});
-`;
+  payload TEXT NOT NULL DEFAULT '{}'
+);`,
+    `CREATE TABLE IF NOT EXISTS schedule_chunk (
+  seq INTEGER PRIMARY KEY,
+  data TEXT NOT NULL
+);`,
+    `INSERT OR REPLACE INTO schedule_snapshot (id, fetched_at, year, term, term_code, payload)
+VALUES (1, ${sqlString(snapshot.fetchedAt)}, ${snapshot.year}, ${sqlString(snapshot.term)}, ${sqlString(snapshot.termCode)}, '{}');`,
+    'DELETE FROM schedule_chunk;',
+    ...chunks.map((chunk, seq) =>
+      `INSERT INTO schedule_chunk (seq, data) VALUES (${seq}, ${sqlString(chunk)});`
+    ),
+  ];
+
   fs.mkdirSync(path.dirname(sqlPath), { recursive: true });
-  fs.writeFileSync(sqlPath, sql, 'utf8');
+  fs.writeFileSync(sqlPath, `${statements.join('\n')}\n`, 'utf8');
+  log(`D1 SQL: ${chunks.length} chunk(s), ${payload.length} payload chars`);
 }
 
 function uploadToD1() {

@@ -1,4 +1,5 @@
 import { jsonHeaders } from '../../cors';
+import { readSnapshotMeta } from '../../_lib/snapshot';
 
 interface Env {
   DB: D1Database;
@@ -18,15 +19,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, request }) => {
   }
 
   try {
-    const row = await env.DB.prepare(
-      'SELECT fetched_at, year, term, term_code FROM schedule_snapshot WHERE id = 1'
-    ).first<{
-      fetched_at: string;
-      year: number;
-      term: string;
-      term_code: string;
-    }>();
-
+    const row = await readSnapshotMeta(env.DB);
     if (!row) {
       return new Response(JSON.stringify({ error: 'No schedule snapshot yet' }), {
         status: 404,
