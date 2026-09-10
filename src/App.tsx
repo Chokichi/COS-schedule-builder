@@ -20,10 +20,14 @@ import {
   FormControl,
   InputLabel,
   TextField,
+  Divider,
+  useMediaQuery,
 } from '@mui/material';
 import {
   ViewColumn,
   ViewAgenda,
+  ViewWeek,
+  Swipe,
   Add,
   Save,
   Print,
@@ -33,6 +37,7 @@ import {
   Close,
   Edit,
   Delete,
+  MoreVert,
 } from '@mui/icons-material';
 import scheduleConfig from './scheduleConfig.json';
 import { AppState, FilterState, SubjectData, CustomTimeBlock, SavedSchedule, Course } from './types';
@@ -199,6 +204,9 @@ function App() {
   const [courseOpacity, setCourseOpacity] = useState(0.6);
   const [showOpacityMenu, setShowOpacityMenu] = useState(false);
   const [scheduleLayout, setScheduleLayout] = useState<'horizontal' | 'vertical'>('horizontal');
+  const [weekView, setWeekView] = useState<'full' | 'twoDay'>(() =>
+    typeof window !== 'undefined' && window.innerWidth <= 900 ? 'twoDay' : 'full'
+  );
   const [layoutMenuAnchor, setLayoutMenuAnchor] = useState<{ available: HTMLElement | null; mySchedule: HTMLElement | null }>({ available: null, mySchedule: null });
   const [savedSchedules, setSavedSchedules] = useState<SavedSchedule[]>([]);
   const [selectedScheduleId, setSelectedScheduleId] = useState<string | ''>('');
@@ -211,6 +219,8 @@ function App() {
   const [compareSchedule1Id, setCompareSchedule1Id] = useState<string | ''>('');
   const [compareSchedule2Id, setCompareSchedule2Id] = useState<string | ''>('');
   const [compareMenuAnchor, setCompareMenuAnchor] = useState<HTMLElement | null>(null);
+  const [myScheduleActionsAnchor, setMyScheduleActionsAnchor] = useState<HTMLElement | null>(null);
+  const isNarrowScheduleHeader = useMediaQuery('(max-width:900px)');
   const syncingCatalogRef = React.useRef(false);
   const [catalogMeta, setCatalogMeta] = useState({
     year: scheduleConfig.year as number,
@@ -1384,11 +1394,12 @@ function App() {
         <Box sx={{
           display: 'grid',
           gridTemplateColumns: compareMode 
-            ? '1fr'  // Full width in compare mode
-            : { xs: '1fr', md: '320px 1fr' },
+            ? 'minmax(0, 1fr)'
+            : { xs: 'minmax(0, 1fr)', md: '320px minmax(0, 1fr)' },
           gap: '16px',
           padding: '16px',
-          minHeight: 'calc(100vh - 80px)'
+          minHeight: 'calc(100vh - 80px)',
+          minWidth: 0,
         }}>
           {/* Left Panel - Filter Panel (hidden in compare mode) */}
           {!compareMode && (
@@ -1449,7 +1460,7 @@ function App() {
           {/* Right Grid / Compare Mode */}
           {compareMode ? (
             /* Compare Mode */
-            <Box>
+            <Box sx={{ minWidth: 0, overflow: 'hidden' }}>
               {/* Compare Mode Header */}
               <Box sx={{
                 display: 'flex',
@@ -1514,9 +1525,10 @@ function App() {
               
               <Box sx={{
                 display: 'grid',
-                gridTemplateColumns: { xs: '1fr', lg: 'repeat(2, 1fr)' },
+                gridTemplateColumns: { xs: '1fr', lg: 'repeat(2, minmax(0, 1fr))' },
                 gap: '16px',
-                width: '100%'
+                width: '100%',
+                minWidth: 0,
               }}>
               {/* Compare Schedule 1 */}
               {(() => {
@@ -1531,6 +1543,8 @@ function App() {
                     borderRadius: '16px',
                     padding: '10px',
                     minHeight: '680px',
+                    minWidth: 0,
+                    overflow: 'hidden',
                     boxShadow: '0 8px 24px rgba(0,0,0,0.25)'
                   }}>
                     <Box sx={{
@@ -1557,6 +1571,7 @@ function App() {
                       courseOpacity={courseOpacity}
                       isMySchedule={true}
                       sharedTimeRange={sharedTimeRange}
+                      weekView={weekView}
                     />
                   </Box>
                 );
@@ -1575,6 +1590,8 @@ function App() {
                     borderRadius: '16px',
                     padding: '10px',
                     minHeight: '680px',
+                    minWidth: 0,
+                    overflow: 'hidden',
                     boxShadow: '0 8px 24px rgba(0,0,0,0.25)'
                   }}>
                     <Box sx={{
@@ -1601,6 +1618,7 @@ function App() {
                       courseOpacity={courseOpacity}
                       isMySchedule={true}
                       sharedTimeRange={sharedTimeRange}
+                      weekView={weekView}
                     />
                   </Box>
                 );
@@ -1612,10 +1630,12 @@ function App() {
             <Box sx={{
               display: 'grid',
               gridTemplateColumns: scheduleLayout === 'horizontal' 
-                ? { xs: '1fr', lg: 'repeat(2, minmax(300px, 1fr))' }
+                ? { xs: '1fr', lg: 'repeat(2, minmax(0, 1fr))' }
                 : { xs: '1fr' },
               gridTemplateRows: scheduleLayout === 'vertical' ? 'auto auto' : 'auto',
-              gap: '16px'
+              gap: '16px',
+              width: '100%',
+              minWidth: 0,
             }}>
             {/* Available Courses Board */}
             <Box sx={{
@@ -1626,6 +1646,8 @@ function App() {
               borderRadius: '16px',
               padding: '10px',
               minHeight: '680px',
+              minWidth: 0,
+              overflow: 'hidden',
               boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
               position: 'relative'
             }}>
@@ -1691,6 +1713,31 @@ function App() {
                         <ViewAgenda fontSize="small" />
                       </ListItemIcon>
                       <ListItemText>Vertical Layout</ListItemText>
+                    </MenuItem>
+                    <Divider />
+                    <MenuItem
+                      selected={weekView === 'full'}
+                      onClick={() => {
+                        setWeekView('full');
+                        setLayoutMenuAnchor({ ...layoutMenuAnchor, available: null });
+                      }}
+                    >
+                      <ListItemIcon>
+                        <ViewWeek fontSize="small" />
+                      </ListItemIcon>
+                      <ListItemText>Full week</ListItemText>
+                    </MenuItem>
+                    <MenuItem
+                      selected={weekView === 'twoDay'}
+                      onClick={() => {
+                        setWeekView('twoDay');
+                        setLayoutMenuAnchor({ ...layoutMenuAnchor, available: null });
+                      }}
+                    >
+                      <ListItemIcon>
+                        <Swipe fontSize="small" />
+                      </ListItemIcon>
+                      <ListItemText>2-day scroll</ListItemText>
                     </MenuItem>
                   </Menu>
                 </Box>
@@ -1831,6 +1878,7 @@ function App() {
                 onEditCustomBlock={handleEditCustomBlock}
                 courseOpacity={courseOpacity}
                 sharedTimeRange={sharedTimeRange}
+                weekView={weekView}
               />
               
               {/* Online Courses Section */}
@@ -1867,25 +1915,36 @@ function App() {
               borderRadius: '16px',
               padding: '10px',
               minHeight: '680px',
+              minWidth: 0,
+              overflow: 'hidden',
               boxShadow: '0 8px 24px rgba(0,0,0,0.25)'
             }}>
               <Box sx={{
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
+                gap: 1,
+                minWidth: 0,
                 marginBottom: '8px'
               }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
+                <Box sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1,
+                  flex: isNarrowScheduleHeader ? '1 1 auto' : 1,
+                  minWidth: 0,
+                }}>
                   <Typography variant="h6" sx={{
                     margin: '4px 8px 8px 8px',
                     fontSize: '15px',
-                    color: 'text.secondary'
+                    color: 'text.secondary',
+                    whiteSpace: 'nowrap',
                   }}>
                     ✅ My Schedule
                   </Typography>
                   
                   {/* Saved Schedules Dropdown */}
-                  {savedSchedules.length > 0 && (
+                  {savedSchedules.length > 0 && !isNarrowScheduleHeader && (
                     <FormControl size="small" sx={{ minWidth: 150, mr: 1 }}>
                       <Select
                         value={selectedScheduleId}
@@ -1936,6 +1995,7 @@ function App() {
                   {/* Compare Button with Menu */}
                   {savedSchedules.length >= 2 && !compareMode && (
                     <>
+                      {!isNarrowScheduleHeader && (
                       <Tooltip title="Compare Schedules">
                         <IconButton
                           size="small"
@@ -1951,6 +2011,7 @@ function App() {
                           <CompareArrows fontSize="small" />
                         </IconButton>
                       </Tooltip>
+                      )}
                       <Menu
                         anchorEl={compareMenuAnchor}
                         open={!!compareMenuAnchor}
@@ -2021,6 +2082,8 @@ function App() {
                   )}
                   
                   {/* Layout Button */}
+                  {!isNarrowScheduleHeader && (
+                  <>
                   <IconButton
                     size="small"
                     onClick={(e) => setLayoutMenuAnchor({ ...layoutMenuAnchor, mySchedule: e.currentTarget })}
@@ -2069,23 +2132,52 @@ function App() {
                       </ListItemIcon>
                       <ListItemText>Vertical Layout</ListItemText>
                     </MenuItem>
+                    <Divider />
+                    <MenuItem
+                      selected={weekView === 'full'}
+                      onClick={() => {
+                        setWeekView('full');
+                        setLayoutMenuAnchor({ ...layoutMenuAnchor, mySchedule: null });
+                      }}
+                    >
+                      <ListItemIcon>
+                        <ViewWeek fontSize="small" />
+                      </ListItemIcon>
+                      <ListItemText>Full week</ListItemText>
+                    </MenuItem>
+                    <MenuItem
+                      selected={weekView === 'twoDay'}
+                      onClick={() => {
+                        setWeekView('twoDay');
+                        setLayoutMenuAnchor({ ...layoutMenuAnchor, mySchedule: null });
+                      }}
+                    >
+                      <ListItemIcon>
+                        <Swipe fontSize="small" />
+                      </ListItemIcon>
+                      <ListItemText>2-day scroll</ListItemText>
+                    </MenuItem>
                   </Menu>
+                  </>
+                  )}
                 </Box>
                 <Typography variant="body2" sx={{
-                  margin: '0 8px 8px 8px',
-                  fontSize: '14px',
+                  margin: isNarrowScheduleHeader ? '0 4px' : '0 8px 8px 8px',
+                  fontSize: isNarrowScheduleHeader ? '12px' : '14px',
                   fontWeight: 'bold',
                   color: 'white',
                   background: 'primary.main',
                   border: 'none',
-                  padding: '6px 12px',
+                  padding: isNarrowScheduleHeader ? '4px 8px' : '6px 12px',
                   borderRadius: '6px',
                   display: 'inline-block',
-                  textTransform: 'none'
+                  textTransform: 'none',
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap',
                 }}>
                   {totalUnits} Units
                 </Typography>
-                <Box sx={{ display: 'flex', gap: 0.5 }}>
+                <Box sx={{ display: 'flex', gap: 0.5, flexShrink: 0 }}>
                   <Tooltip title="Create Custom Block">
                     <IconButton
                       size="small"
@@ -2104,6 +2196,8 @@ function App() {
                       <Add fontSize="small" />
                     </IconButton>
                   </Tooltip>
+                  {!isNarrowScheduleHeader && (
+                  <>
                   <Tooltip title="Save / Load Schedule">
                     <IconButton
                       size="small"
@@ -2154,6 +2248,9 @@ function App() {
                       <ListItemText>Load</ListItemText>
                     </MenuItem>
                   </Menu>
+                  </>
+                  )}
+                  {!isNarrowScheduleHeader && (
                   <Tooltip title="Print Schedule">
                     <IconButton
                       size="small"
@@ -2172,6 +2269,149 @@ function App() {
                       <Print fontSize="small" />
                     </IconButton>
                   </Tooltip>
+                  )}
+                  {isNarrowScheduleHeader && (
+                    <>
+                      <Tooltip title="Schedule actions" disableHoverListener={!!myScheduleActionsAnchor}>
+                        <IconButton
+                          size="small"
+                          onClick={(e) => setMyScheduleActionsAnchor(e.currentTarget)}
+                          sx={{
+                            background: 'secondary.main',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '6px',
+                            padding: '6px',
+                            '&:hover': {
+                              background: 'secondary.dark',
+                            },
+                          }}
+                        >
+                          <MoreVert fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Menu
+                        anchorEl={myScheduleActionsAnchor}
+                        open={!!myScheduleActionsAnchor}
+                        onClose={() => setMyScheduleActionsAnchor(null)}
+                        anchorOrigin={{
+                          vertical: 'bottom',
+                          horizontal: 'right',
+                        }}
+                        transformOrigin={{
+                          vertical: 'top',
+                          horizontal: 'right',
+                        }}
+                      >
+                        <MenuItem
+                          onClick={() => {
+                            setScheduleLayout('horizontal');
+                            setMyScheduleActionsAnchor(null);
+                          }}
+                        >
+                          <ListItemIcon>
+                            <ViewColumn fontSize="small" />
+                          </ListItemIcon>
+                          <ListItemText>Horizontal Layout</ListItemText>
+                        </MenuItem>
+                        <MenuItem
+                          onClick={() => {
+                            setScheduleLayout('vertical');
+                            setMyScheduleActionsAnchor(null);
+                          }}
+                        >
+                          <ListItemIcon>
+                            <ViewAgenda fontSize="small" />
+                          </ListItemIcon>
+                          <ListItemText>Vertical Layout</ListItemText>
+                        </MenuItem>
+                        <Divider />
+                        <MenuItem
+                          selected={weekView === 'full'}
+                          onClick={() => {
+                            setWeekView('full');
+                            setMyScheduleActionsAnchor(null);
+                          }}
+                        >
+                          <ListItemIcon>
+                            <ViewWeek fontSize="small" />
+                          </ListItemIcon>
+                          <ListItemText>Full week</ListItemText>
+                        </MenuItem>
+                        <MenuItem
+                          selected={weekView === 'twoDay'}
+                          onClick={() => {
+                            setWeekView('twoDay');
+                            setMyScheduleActionsAnchor(null);
+                          }}
+                        >
+                          <ListItemIcon>
+                            <Swipe fontSize="small" />
+                          </ListItemIcon>
+                          <ListItemText>2-day scroll</ListItemText>
+                        </MenuItem>
+                        {savedSchedules.length >= 2 && !compareMode && (
+                          <MenuItem
+                            onClick={() => {
+                              const anchor = myScheduleActionsAnchor;
+                              setMyScheduleActionsAnchor(null);
+                              setCompareMenuAnchor(anchor);
+                            }}
+                          >
+                            <ListItemIcon>
+                              <CompareArrows fontSize="small" />
+                            </ListItemIcon>
+                            <ListItemText>Compare schedules</ListItemText>
+                          </MenuItem>
+                        )}
+                        <Divider />
+                        <MenuItem
+                          onClick={() => {
+                            setMyScheduleActionsAnchor(null);
+                            handleSaveScheduleClick();
+                          }}
+                        >
+                          <ListItemIcon>
+                            <Save fontSize="small" />
+                          </ListItemIcon>
+                          <ListItemText>Save</ListItemText>
+                        </MenuItem>
+                        <MenuItem
+                          onClick={() => {
+                            setMyScheduleActionsAnchor(null);
+                            handleShareScheduleClick();
+                          }}
+                        >
+                          <ListItemIcon>
+                            <Share fontSize="small" />
+                          </ListItemIcon>
+                          <ListItemText>Share</ListItemText>
+                        </MenuItem>
+                        <MenuItem
+                          onClick={() => {
+                            setMyScheduleActionsAnchor(null);
+                            handleLoadScheduleClick();
+                          }}
+                        >
+                          <ListItemIcon>
+                            <FolderOpen fontSize="small" />
+                          </ListItemIcon>
+                          <ListItemText>Load</ListItemText>
+                        </MenuItem>
+                        <MenuItem
+                          onClick={() => {
+                            setMyScheduleActionsAnchor(null);
+                            handlePrintSchedule();
+                          }}
+                        >
+                          <ListItemIcon>
+                            <Print fontSize="small" />
+                          </ListItemIcon>
+                          <ListItemText>Print</ListItemText>
+                        </MenuItem>
+                      </Menu>
+                    </>
+                  )}
                 </Box>
               </Box>
               <ScheduleGrid
@@ -2185,6 +2425,7 @@ function App() {
                 courseOpacity={courseOpacity}
                 isMySchedule={true}
                 sharedTimeRange={sharedTimeRange}
+                weekView={weekView}
               />
             </Box>
             

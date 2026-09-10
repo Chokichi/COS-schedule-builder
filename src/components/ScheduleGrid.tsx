@@ -8,6 +8,10 @@ import {
 } from '@mui/material';
 import { Course, FilterState, CustomTimeBlock, DAYS, DAY_LABELS, PX_PER_HOUR, DAY_START_MIN, DAY_END_MIN } from '../types';
 
+const TIME_COL_WIDTH = 60;
+const VISIBLE_DAYS = 2;
+const NEXT_DAY_PEEK = 32;
+
 interface ScheduleGridProps {
   courses: Course[];
   mySchedule: Course[];
@@ -19,6 +23,7 @@ interface ScheduleGridProps {
   isMySchedule?: boolean;
   courseOpacity?: number;
   sharedTimeRange?: { startMin: number; endMin: number };
+  weekView?: 'full' | 'twoDay';
 }
 
 const ScheduleGrid: React.FC<ScheduleGridProps> = ({
@@ -32,6 +37,7 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
   isMySchedule = false,
   courseOpacity = 0.6,
   sharedTimeRange,
+  weekView = 'full',
 }) => {
   // State for cycling through overlapping courses
   const [overlappingGroups, setOverlappingGroups] = useState<{ [key: string]: { courses: Course[], currentIndex: number } }>({});
@@ -39,6 +45,8 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
   // Mobile tooltip state
   const [openTooltip, setOpenTooltip] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const twoDayView = weekView === 'twoDay';
+  const twoDayCol = `calc((100cqi - ${TIME_COL_WIDTH}px - ${NEXT_DAY_PEEK}px) / ${VISIBLE_DAYS})`;
 
   // Convert custom blocks to course-like objects for display
   const customBlockCourses = useMemo(() => {
@@ -399,6 +407,8 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
               : '1px dashed #d1d5db',
             padding: '2px 6px',
             boxSizing: 'border-box',
+            background: (theme) => theme.palette.mode === 'dark' ? '#0f1722' : '#f0f4f8',
+            width: '100%',
           }}
         >
           {h12}:00 {ampm}
@@ -873,6 +883,8 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
         key={day}
         sx={{
           position: 'relative',
+          zIndex: 0,
+          isolation: 'isolate',
           minHeight: ((timeRange.endMin - timeRange.startMin) / 60) * PX_PER_HOUR,
           background: (theme) => theme.palette.mode === 'dark'
             ? 'linear-gradient(180deg, rgba(32,48,69,0.25), rgba(32,48,69,0.18))'
@@ -1033,9 +1045,17 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
     );
   }
 
+  const gridTemplateColumns = twoDayView
+    ? `${TIME_COL_WIDTH}px repeat(${DAYS.length}, ${twoDayCol})`
+    : `${TIME_COL_WIDTH}px repeat(${DAYS.length}, 1fr)`;
+
   return (
     <Box sx={{
       position: 'relative',
+      width: '100%',
+      maxWidth: '100%',
+      minWidth: 0,
+      containerType: 'inline-size',
       borderRadius: '10px',
       overflow: 'hidden',
       border: (theme) => theme.palette.mode === 'dark' 
@@ -1044,27 +1064,44 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
     }}>
       <Box
         sx={{
-          display: 'grid',
-          gridTemplateColumns: '60px repeat(5, 1fr)',
-          gap: 0,
+          width: '100%',
+          minWidth: 0,
+          overflowX: twoDayView ? 'auto' : 'hidden',
+          overflowY: 'hidden',
+          WebkitOverflowScrolling: 'touch',
+          overscrollBehaviorX: 'contain',
         }}
       >
-        {/* Time Column Header */}
         <Box
           sx={{
-            background: (theme) => theme.palette.mode === 'dark' ? '#0d1520' : '#f0f4f8',
-            color: 'text.secondary',
-            borderBottom: (theme) => theme.palette.mode === 'dark' 
-              ? '1px solid #213247' 
-              : '1px solid #d1d5db',
-            padding: '6px 8px',
-            textAlign: 'center',
-            fontSize: '12px',
-            fontWeight: 'bold',
+            display: 'grid',
+            gridTemplateColumns,
+            width: twoDayView ? 'max-content' : '100%',
+            minWidth: twoDayView ? 'max-content' : '100%',
+            gap: 0,
           }}
         >
-          Time
-        </Box>
+          <Box
+            sx={{
+              position: twoDayView ? 'sticky' : 'static',
+              left: 0,
+              zIndex: 8,
+              isolation: 'isolate',
+              width: '100%',
+              boxShadow: twoDayView ? '6px 0 10px rgba(0,0,0,0.22)' : 'none',
+              background: (theme) => theme.palette.mode === 'dark' ? '#0d1520' : '#f0f4f8',
+              color: 'text.secondary',
+              borderBottom: (theme) => theme.palette.mode === 'dark' 
+                ? '1px solid #213247' 
+                : '1px solid #d1d5db',
+              padding: '6px 8px',
+              textAlign: 'center',
+              fontSize: '12px',
+              fontWeight: 'bold',
+            }}
+          >
+            Time
+          </Box>
         
         {/* Day Headers */}
         {DAYS.map(day => (
@@ -1089,6 +1126,13 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
         {/* Time Column */}
         <Box
           sx={{
+            position: twoDayView ? 'sticky' : 'static',
+            left: 0,
+            zIndex: 7,
+            isolation: 'isolate',
+            width: '100%',
+            height: '100%',
+            boxShadow: twoDayView ? '6px 0 10px rgba(0,0,0,0.22)' : 'none',
             background: (theme) => theme.palette.mode === 'dark' ? '#0f1722' : '#f0f4f8',
           }}
         >
@@ -1097,8 +1141,25 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
         
         {/* Day Columns */}
         {DAYS.map(day => renderDayColumn(day))}
+        </Box>
       </Box>
-      
+      {twoDayView && (
+        <Typography
+          variant="caption"
+          sx={{
+            display: 'block',
+            textAlign: 'center',
+            color: 'text.secondary',
+            fontSize: '11px',
+            padding: '6px 8px 4px',
+            borderTop: (theme) => theme.palette.mode === 'dark'
+              ? '1px solid #2a3c55'
+              : '1px solid #e5e7eb',
+          }}
+        >
+          Swipe to see the rest of the week
+        </Typography>
+      )}
     </Box>
   );
 };
