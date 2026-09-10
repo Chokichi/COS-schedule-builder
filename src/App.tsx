@@ -35,14 +35,14 @@ import {
   Delete,
 } from '@mui/icons-material';
 import scheduleConfig from './scheduleConfig.json';
-import { AppState, FilterState, SubjectData, CustomTimeBlock, SavedSchedule } from './types';
+import { AppState, FilterState, SubjectData, CustomTimeBlock, SavedSchedule, Course } from './types';
 import FilterPanel from './components/FilterPanel';
 import ScheduleGrid from './components/ScheduleGrid';
 import OnlineCoursesList from './components/OnlineCoursesList';
 import ImportModal from './components/ImportModal';
 import SaveLoadModal from './components/SaveLoadModal';
 import CustomBlockModal from './components/CustomBlockModal';
-import { parseHtmlTable, loadBasicSchedule, encodeCustomBlockForShare, decodeCustomBlockFromShare, formatFetchedAt } from './utils/parser';
+import { encodeCustomBlockForShare, decodeCustomBlockFromShare, formatFetchedAt, fetchScheduleMeta, fetchScheduleSnapshot, hydrateSnapshot, rematchSavedCourses, catalogIsStale, ScheduleSnapshot } from './utils/parser';
 
 const lightTheme = createTheme({
   palette: {
@@ -156,7 +156,37 @@ const initialAppState: AppState = {
   error: null,
   importProgress: 0,
   importProgressText: '',
+  catalogFetchedAt: null,
 };
+
+function buildCatalogFields(courses: Course[], online: Course[]) {
+  const subjectData = new Map<string, SubjectData>();
+  const allForFilters = [...courses, ...online];
+  for (const course of allForFilters) {
+    if (!subjectData.has(course.Subject)) {
+      subjectData.set(course.Subject, {
+        courses: [],
+        courseNumbers: new Set(),
+        instructors: new Set(),
+        campuses: new Set(),
+      });
+    }
+    const subjectInfo = subjectData.get(course.Subject)!;
+    subjectInfo.courses.push(course);
+    subjectInfo.courseNumbers.add(course.Course);
+    if (course.Instructor) subjectInfo.instructors.add(course.Instructor);
+    if (course.Campus) subjectInfo.campuses.add(course.Campus);
+  }
+  return {
+    allCourses: courses,
+    onlineCourses: online,
+    subjects: new Set(allForFilters.map(c => c.Subject)),
+    courses: new Set(allForFilters.map(c => c.Course)),
+    instructors: new Set(allForFilters.map(c => c.Instructor).filter(Boolean)),
+    campuses: new Set(allForFilters.map(c => c.Campus).filter(Boolean)),
+    subjectData,
+  };
+}
 
 function App() {
   const [appState, setAppState] = useState<AppState>(initialAppState);
@@ -181,10 +211,15 @@ function App() {
   const [compareSchedule1Id, setCompareSchedule1Id] = useState<string | ''>('');
   const [compareSchedule2Id, setCompareSchedule2Id] = useState<string | ''>('');
   const [compareMenuAnchor, setCompareMenuAnchor] = useState<HTMLElement | null>(null);
-  const catalogLoadStartedRef = React.useRef(false);
+  const syncingCatalogRef = React.useRef(false);
+  const [catalogMeta, setCatalogMeta] = useState({
+    year: scheduleConfig.year as number,
+    term: scheduleConfig.term as string,
+    termCode: (scheduleConfig as { termCode?: string }).termCode || '',
+  });
 
-  const scheduleLabel = `${scheduleConfig.term} ${scheduleConfig.year}`;
-  const lastUpdatedLabel = formatFetchedAt(scheduleConfig.fetchedAt);
+  const scheduleLabel = `${catalogMeta.term} ${catalogMeta.year}`;
+  const lastUpdatedLabel = formatFetchedAt(appState.catalogFetchedAt);
 
   // Update CSS custom property when courseOpacity changes
   useEffect(() => {
@@ -309,6 +344,7 @@ function App() {
         },
         customBlocks: appState.customBlocks,
         isLightMode,
+        catalogFetchedAt: appState.catalogFetchedAt,
         timestamp: Date.now(),
       };
       localStorage.setItem('ssb_data', JSON.stringify(dataToSave));
@@ -366,6 +402,7 @@ function App() {
             },
             customBlocks: data.customBlocks || [],
             isLightMode: data.isLightMode || false,
+            catalogFetchedAt: data.catalogFetchedAt || null,
           };
         }
       }
@@ -405,250 +442,177 @@ function App() {
     }
   }, [loadFromLocalStorage]);
 
+  const applySnapshot = useCallback((snapshot: ScheduleSnapshot, options: {
+    mySchedule?: Course[];
+    myOnlineClasses?: Course[];
+    customBlocks?: AppState['customBlocks'];
+  } = {}) => {
+    const { courses, online } = hydrateSnapshot(snapshot);
+    const catalogFields = buildCatalogFields(courses, online);
+    setCatalogMeta({
+      year: snapshot.year,
+      term: snapshot.term,
+      termCode: snapshot.termCode || '',
+    });
+    setAppState(prev => ({
+      ...prev,
+      ...catalogFields,
+      mySchedule: rematchSavedCourses(options.mySchedule ?? prev.mySchedule, courses),
+      myOnlineClasses: rematchSavedCourses(options.myOnlineClasses ?? prev.myOnlineClasses, online),
+      customBlocks: options.customBlocks ?? prev.customBlocks,
+      catalogFetchedAt: snapshot.fetchedAt,
+      isLoading: false,
+      error: null,
+      importProgress: 100,
+      importProgressText: 'Schedule loaded',
+    }));
+    setTimeout(() => {
+      setAppState(prev => ({
+        ...prev,
+        importProgress: 0,
+        importProgressText: '',
+      }));
+    }, 800);
+  }, []);
+
+  const syncCatalog = useCallback(async (options: {
+    localFetchedAt?: string | null;
+    hasLocalCatalog?: boolean;
+    mySchedule?: Course[];
+    myOnlineClasses?: Course[];
+    customBlocks?: AppState['customBlocks'];
+    openSubjectPicker?: boolean;
+  } = {}) => {
+    if (syncingCatalogRef.current) return;
+    syncingCatalogRef.current = true;
+    setAppState(prev => ({
+      ...prev,
+      isLoading: true,
+      error: null,
+      importProgress: 15,
+      importProgressText: 'Checking for schedule updates...',
+    }));
+    try {
+      const localFetchedAt = options.localFetchedAt ?? null;
+      const hasLocalCatalog = options.hasLocalCatalog ?? false;
+      const meta = await fetchScheduleMeta();
+
+      if (meta) {
+        setCatalogMeta({
+          year: meta.year,
+          term: meta.term,
+          termCode: meta.termCode || '',
+        });
+      }
+
+      const remoteFetchedAt = meta?.fetchedAt;
+      const needFull = !hasLocalCatalog
+        || !localFetchedAt
+        || !remoteFetchedAt
+        || catalogIsStale(localFetchedAt, remoteFetchedAt);
+
+      if (!needFull) {
+        setAppState(prev => ({
+          ...prev,
+          catalogFetchedAt: remoteFetchedAt || prev.catalogFetchedAt,
+          isLoading: false,
+          error: null,
+          importProgress: 0,
+          importProgressText: '',
+        }));
+        if (options.openSubjectPicker) setImportModalOpen(true);
+        return;
+      }
+
+      setAppState(prev => ({
+        ...prev,
+        importProgress: 45,
+        importProgressText: 'Loading course catalog...',
+      }));
+      const snapshot = await fetchScheduleSnapshot();
+      if (hasLocalCatalog && !catalogIsStale(localFetchedAt, snapshot.fetchedAt)) {
+        setCatalogMeta({
+          year: snapshot.year,
+          term: snapshot.term,
+          termCode: snapshot.termCode || '',
+        });
+        setAppState(prev => ({
+          ...prev,
+          catalogFetchedAt: snapshot.fetchedAt,
+          isLoading: false,
+          error: null,
+          importProgress: 0,
+          importProgressText: '',
+        }));
+      } else {
+        applySnapshot(snapshot, options);
+      }
+      if (options.openSubjectPicker) setImportModalOpen(true);
+    } catch (error) {
+      console.error('Failed to sync catalog:', error);
+      setAppState(prev => ({
+        ...prev,
+        isLoading: false,
+        error: error instanceof Error ? error.message : 'Failed to load schedule',
+        importProgress: 0,
+        importProgressText: '',
+      }));
+      if (options.openSubjectPicker) setImportModalOpen(true);
+    } finally {
+      syncingCatalogRef.current = false;
+    }
+  }, [applySnapshot]);
+
   const handleRestoreData = useCallback(() => {
     const savedData = loadFromLocalStorage();
     if (savedData) {
-      // Debug: Verify data structure matches parser output
-      console.log('🔍 Verifying restored data structure...');
-      if (savedData.subjectData.size > 0) {
-        const firstSubject = Array.from(savedData.subjectData.keys())[0];
-        const firstSubjectData = savedData.subjectData.get(firstSubject) as SubjectData;
-        console.log(`🔍 First subject (${firstSubject}) structure:`, {
-          courses: Array.isArray(firstSubjectData?.courses) ? `Array[${firstSubjectData.courses.length}]` : typeof firstSubjectData?.courses,
-          courseNumbers: firstSubjectData?.courseNumbers instanceof Set ? `Set[${firstSubjectData.courseNumbers.size}]` : typeof firstSubjectData?.courseNumbers,
-          instructors: firstSubjectData?.instructors instanceof Set ? `Set[${firstSubjectData.instructors.size}]` : typeof firstSubjectData?.instructors,
-          campuses: firstSubjectData?.campuses instanceof Set ? `Set[${firstSubjectData.campuses.size}]` : typeof firstSubjectData?.campuses,
-        });
-        
-        // Verify courseNumbers Set contains strings
-        if (firstSubjectData?.courseNumbers instanceof Set) {
-          const firstCourseNumber = Array.from(firstSubjectData.courseNumbers)[0];
-          console.log(`🔍 First courseNumber type:`, typeof firstCourseNumber, firstCourseNumber);
-        }
-      }
-      
       setAppState(prev => ({
         ...prev,
         allCourses: savedData.allCourses,
         onlineCourses: savedData.onlineCourses,
         mySchedule: savedData.mySchedule,
         myOnlineClasses: savedData.myOnlineClasses,
-        customBlocks: (savedData as any).customBlocks || [],
+        customBlocks: savedData.customBlocks || [],
         subjects: savedData.subjects,
         courses: savedData.courses,
         instructors: savedData.instructors,
         campuses: savedData.campuses,
         subjectData: savedData.subjectData as Map<string, SubjectData>,
         filters: savedData.filters,
+        catalogFetchedAt: savedData.catalogFetchedAt || null,
       }));
       setIsLightMode(savedData.isLightMode);
       setShowRestorePrompt(false);
+      void syncCatalog({
+        localFetchedAt: savedData.catalogFetchedAt || null,
+        hasLocalCatalog: (savedData.allCourses?.length || 0) > 0,
+        mySchedule: savedData.mySchedule,
+        myOnlineClasses: savedData.myOnlineClasses,
+        customBlocks: savedData.customBlocks || [],
+        openSubjectPicker: savedData.filters.subjectAllow.size === 0,
+      });
       console.log('🔄 Data restored from local storage');
-      console.log('🔄 Custom blocks restored:', (savedData as any).customBlocks?.length || 0);
+      console.log('🔄 Custom blocks restored:', savedData.customBlocks?.length || 0);
     }
-  }, [loadFromLocalStorage]);
+  }, [loadFromLocalStorage, syncCatalog]);
 
   const handleDiscardData = useCallback(() => {
     clearLocalStorage();
-    catalogLoadStartedRef.current = false;
+    syncingCatalogRef.current = false;
     setShowRestorePrompt(false);
     setImportModalOpen(true);
     console.log('❌ Saved data discarded');
   }, [clearLocalStorage]);
 
-  const handleParseHtml = useCallback(async (html: string) => {
-    const startTime = Date.now();
-    console.log('🚀 Import started at:', new Date().toLocaleTimeString());
-    
-    setAppState(prev => ({ 
-      ...prev, 
-      isLoading: true, 
-      error: null, 
-      importProgress: 0, 
-      importProgressText: 'Starting import...' 
-    }));
-    
-    try {
-      // Step 1: Parse HTML table
-      const step1Start = Date.now();
-      setAppState(prev => ({ 
-        ...prev, 
-        importProgress: 20, 
-        importProgressText: 'Parsing schedule table...' 
-      }));
-      
-      const parsed = parseHtmlTable(html);
-      const step1Time = Date.now() - step1Start;
-      console.log(`📊 Parsing completed in ${step1Time}ms`);
-      
-      // Step 2: Build hierarchical data structure
-      const step2Start = Date.now();
-      setAppState(prev => ({ 
-        ...prev, 
-        importProgress: 40, 
-        importProgressText: 'Building subject data structure...' 
-      }));
-      
-      const subjectData = new Map<string, SubjectData>();
-      const allForFilters = [...parsed.courses, ...parsed.online];
-      
-      // Group courses by subject with progress updates
-      let processedCourses = 0;
-      const totalCourses = allForFilters.length;
-      
-      for (const course of allForFilters) {
-        if (!subjectData.has(course.Subject)) {
-          subjectData.set(course.Subject, {
-            courses: [],
-            courseNumbers: new Set(),
-            instructors: new Set(),
-            campuses: new Set(),
-          });
-        }
-        
-        const subjectInfo = subjectData.get(course.Subject)!;
-        subjectInfo.courses.push(course);
-        subjectInfo.courseNumbers.add(course.Course);
-        if (course.Instructor) subjectInfo.instructors.add(course.Instructor);
-        if (course.Campus) subjectInfo.campuses.add(course.Campus);
-        
-        processedCourses++;
-        
-        // Update progress every 200 courses (less frequent updates)
-        if (processedCourses % 200 === 0) {
-          const currentProcessed = processedCourses;
-          const progress = 40 + Math.floor((currentProcessed / totalCourses) * 30);
-          setAppState(prev => ({ 
-            ...prev, 
-            importProgress: progress,
-            importProgressText: `Processing courses... ${currentProcessed}/${totalCourses}`
-          }));
-        }
-      }
-      
-      const step2Time = Date.now() - step2Start;
-      console.log(`🏗️ Data structure built in ${step2Time}ms`);
-      
-      // Step 3: Build global filter sets
-      const step3Start = Date.now();
-      setAppState(prev => ({ 
-        ...prev, 
-        importProgress: 70, 
-        importProgressText: 'Building filter options...' 
-      }));
-      
-      const subjects = new Set(allForFilters.map(c => c.Subject));
-      const courses = new Set(allForFilters.map(c => c.Course));
-      const instructors = new Set(allForFilters.map(c => c.Instructor).filter(Boolean));
-      const campuses = new Set(allForFilters.map(c => c.Campus).filter(Boolean));
-      
-      const step3Time = Date.now() - step3Start;
-      console.log(`🔍 Filter sets built in ${step3Time}ms`);
-      
-      // Step 4: Finalize
-      const step4Start = Date.now();
-      setAppState(prev => ({ 
-        ...prev, 
-        importProgress: 90, 
-        importProgressText: 'Finalizing data...' 
-      }));
-      
-      // Debug: Verify parser data structure
-      console.log('🔍 Verifying parser data structure...');
-      if (subjectData.size > 0) {
-        const firstSubject = Array.from(subjectData.keys())[0];
-        const firstSubjectData = subjectData.get(firstSubject) as SubjectData;
-        console.log(`🔍 Parser first subject (${firstSubject}) structure:`, {
-          courses: Array.isArray(firstSubjectData?.courses) ? `Array[${firstSubjectData.courses.length}]` : typeof firstSubjectData?.courses,
-          courseNumbers: firstSubjectData?.courseNumbers instanceof Set ? `Set[${firstSubjectData.courseNumbers.size}]` : typeof firstSubjectData?.courseNumbers,
-          instructors: firstSubjectData?.instructors instanceof Set ? `Set[${firstSubjectData.instructors.size}]` : typeof firstSubjectData?.instructors,
-          campuses: firstSubjectData?.campuses instanceof Set ? `Set[${firstSubjectData.campuses.size}]` : typeof firstSubjectData?.campuses,
-        });
-        
-        // Verify courseNumbers Set contains strings
-        if (firstSubjectData?.courseNumbers instanceof Set) {
-          const firstCourseNumber = Array.from(firstSubjectData.courseNumbers)[0];
-          console.log(`🔍 Parser first courseNumber type:`, typeof firstCourseNumber, firstCourseNumber);
-        }
-      }
-      
-      setAppState(prev => ({
-        ...prev,
-        allCourses: parsed.courses,
-        onlineCourses: parsed.online,
-        mySchedule: [],
-        myOnlineClasses: [],
-        subjects,
-        courses,
-        instructors,
-        campuses,
-        subjectData,
-        isLoading: false,
-        importProgress: 100,
-        importProgressText: 'Import complete!',
-      }));
-      
-      const step4Time = Date.now() - step4Start;
-      const totalTime = Date.now() - startTime;
-      console.log(`✅ Finalization completed in ${step4Time}ms`);
-      console.log(`🎉 Total import time: ${totalTime}ms`);
-      console.log(`📈 Performance breakdown:`);
-      console.log(`   - Parsing: ${step1Time}ms (${Math.round(step1Time/totalTime*100)}%)`);
-      console.log(`   - Data structure: ${step2Time}ms (${Math.round(step2Time/totalTime*100)}%)`);
-      console.log(`   - Filter sets: ${step3Time}ms (${Math.round(step3Time/totalTime*100)}%)`);
-      console.log(`   - Finalization: ${step4Time}ms (${Math.round(step4Time/totalTime*100)}%)`);
-      
-      // Clear progress after a short delay
-      setTimeout(() => {
-        setAppState(prev => ({ 
-          ...prev, 
-          importProgress: 0, 
-          importProgressText: '' 
-        }));
-      }, 1000);
-      
-    } catch (error) {
-      const errorTime = Date.now() - startTime;
-      console.error(`❌ Import failed after ${errorTime}ms:`, error);
-      
-      setAppState(prev => ({
-        ...prev,
-        error: error instanceof Error ? error.message : 'Failed to parse HTML',
-        isLoading: false,
-        importProgress: 0,
-        importProgressText: '',
-      }));
-      throw error;
-    }
-  }, []);
-
-  const handleLoadBasicSchedule = useCallback(async () => {
-    if (catalogLoadStartedRef.current) {
-      return;
-    }
-    catalogLoadStartedRef.current = true;
-    console.log('🔄 Loading basic schedule...');
-    setAppState(prev => ({ 
-      ...prev, 
-      isLoading: true, 
-      error: null,
-      importProgress: 0,
-      importProgressText: 'Loading schedule...'
-    }));
-
-    try {
-      const html = await loadBasicSchedule();
-      await handleParseHtml(html);
-    } catch (error) {
-      catalogLoadStartedRef.current = false;
-      console.error('Failed to load basic schedule:', error);
-      setAppState(prev => ({ 
-        ...prev, 
-        isLoading: false, 
-        error: error instanceof Error ? error.message : 'Failed to load schedule'
-      }));
-    }
-  }, [handleParseHtml]);
+  const handleLoadCatalog = useCallback(async () => {
+    await syncCatalog({
+      localFetchedAt: appState.catalogFetchedAt,
+      hasLocalCatalog: appState.allCourses.length > 0,
+      mySchedule: appState.mySchedule,
+      myOnlineClasses: appState.myOnlineClasses,
+      customBlocks: appState.customBlocks,
+    });
+  }, [syncCatalog, appState.catalogFetchedAt, appState.allCourses.length, appState.mySchedule, appState.myOnlineClasses, appState.customBlocks]);
 
   const handleSaveLoadSchedule = useCallback((event: React.MouseEvent<HTMLElement>) => {
     setSaveLoadMenuAnchor(event.currentTarget);
@@ -2266,7 +2230,7 @@ function App() {
         <ImportModal
           open={importModalOpen}
           onClose={() => setImportModalOpen(false)}
-          onLoadBasicSchedule={handleLoadBasicSchedule}
+          onLoadCatalog={handleLoadCatalog}
           onCompleteImport={() => setImportModalOpen(false)}
           isLoading={appState.isLoading}
           error={appState.error}
@@ -2274,6 +2238,8 @@ function App() {
           progressText={appState.importProgressText}
           subjects={appState.subjects}
           selectedSubjects={appState.filters.subjectAllow}
+          scheduleLabel={scheduleLabel}
+          lastUpdatedLabel={lastUpdatedLabel}
           onSubjectToggle={(subject) => handleFilterChange({ subjectAllow: new Set([...appState.filters.subjectAllow].includes(subject) ? [...appState.filters.subjectAllow].filter(s => s !== subject) : [...appState.filters.subjectAllow, subject]) })}
         />
 

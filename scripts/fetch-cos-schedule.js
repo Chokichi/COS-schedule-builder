@@ -1,15 +1,18 @@
 #!/usr/bin/env node
 
 /**
- * Fetch the current COS Banner class-search dump and write:
- *   public/basic-schedule.html
- *   src/scheduleConfig.json
+ * Fetch the current COS Banner class search, parse a compact JSON snapshot, and write:
+ *   public/schedule-snapshot.json  (local CRA fallback, gitignored)
+ *   tmp/d1-snapshot.sql            (uploaded to Cloudflare D1 when credentials are set)
  *
  * Usage: npm run fetch-schedule
  */
 
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
+const { parseHTML } = require('linkedom');
+const { parseScheduleTable } = require('./parse-schedule-table');
 
 const SEARCH_URL = 'https://banweb.cos.edu/prod/hzsched.p_search';
 const USER_AGENT =
@@ -20,8 +23,8 @@ const MIN_ALL_SUBJECT_CRNS = 100;
 const MIN_TABLE_BYTES = 50_000;
 
 const projectRoot = path.join(__dirname, '..');
-const htmlPath = path.join(projectRoot, 'public', 'basic-schedule.html');
-const configPath = path.join(projectRoot, 'src', 'scheduleConfig.json');
+const snapshotPath = path.join(projectRoot, 'public', 'schedule-snapshot.json');
+const sqlPath = path.join(projectRoot, 'tmp', 'd1-snapshot.sql');
 
 function log(message) {
   console.log(message);
@@ -252,9 +255,51 @@ function parseTermDesc(termDesc) {
   };
 }
 
-function writeConfig({ year, term, termCode, fetchedAt }) {
-  const data = { year, term, termCode, fetchedAt };
-  fs.writeFileSync(configPath, JSON.stringify(data, null, 2) + '\n', 'utf8');
+function sqlString(value) {
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+function writeSnapshotFiles(snapshot) {
+  fs.mkdirSync(path.dirname(snapshotPath), { recursive: true });
+  fs.writeFileSync(snapshotPath, JSON.stringify(snapshot) + '\n', 'utf8');
+
+  const payload = JSON.stringify({ courses: snapshot.courses, online: snapshot.online });
+  const sql = `CREATE TABLE IF NOT EXISTS schedule_snapshot (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  fetched_at TEXT NOT NULL,
+  year INTEGER NOT NULL,
+  term TEXT NOT NULL,
+  term_code TEXT NOT NULL,
+  payload TEXT NOT NULL
+);
+INSERT OR REPLACE INTO schedule_snapshot (id, fetched_at, year, term, term_code, payload)
+VALUES (1, ${sqlString(snapshot.fetchedAt)}, ${snapshot.year}, ${sqlString(snapshot.term)}, ${sqlString(snapshot.termCode)}, ${sqlString(payload)});
+`;
+  fs.mkdirSync(path.dirname(sqlPath), { recursive: true });
+  fs.writeFileSync(sqlPath, sql, 'utf8');
+}
+
+function uploadToD1() {
+  const token = process.env.CLOUDFLARE_API_TOKEN;
+  if (!token) {
+    log('Skipping D1 upload (CLOUDFLARE_API_TOKEN not set)');
+    return;
+  }
+
+  const database = process.env.CLOUDFLARE_D1_DATABASE || 'cos-schedule';
+  log(`Uploading snapshot to D1 (${database}) …`);
+  const result = spawnSync(
+    'npx',
+    ['wrangler', 'd1', 'execute', database, '--remote', '--file', sqlPath, '--yes'],
+    {
+      cwd: projectRoot,
+      stdio: 'inherit',
+      env: process.env,
+    }
+  );
+  if (result.status !== 0) {
+    throw new Error('wrangler d1 execute failed');
+  }
 }
 
 async function fetchAllAtOnce(listUrl, fields, jar) {
@@ -326,16 +371,24 @@ async function main() {
     fail('Did not receive a complete schedule table from COS');
   }
 
-  const normalized = table.trim() + '\n';
-  fs.mkdirSync(path.dirname(htmlPath), { recursive: true });
-  fs.writeFileSync(htmlPath, normalized, 'utf8');
-
+  const { document } = parseHTML(table);
+  const parsed = parseScheduleTable(document);
   const { year, term } = parseTermDesc(form.termDesc);
   const fetchedAt = new Date().toISOString();
-  writeConfig({ year, term, termCode: form.termCode, fetchedAt });
+  const snapshot = {
+    fetchedAt,
+    year,
+    term,
+    termCode: form.termCode,
+    courses: parsed.courses,
+    online: parsed.online,
+  };
 
-  log(`Wrote ${htmlPath} (${normalized.length} bytes, ${countCrns(normalized)} CRNs)`);
-  log(`Wrote ${configPath}`);
+  writeSnapshotFiles(snapshot);
+  uploadToD1();
+
+  log(`Wrote ${snapshotPath} (${parsed.courses.length} in-person, ${parsed.online.length} online)`);
+  log(`Wrote ${sqlPath}`);
   log(`  year: ${year}`);
   log(`  term: ${term}`);
   log(`  termCode: ${form.termCode}`);

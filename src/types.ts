@@ -81,6 +81,7 @@ export interface AppState {
   error: string | null;
   importProgress: number;
   importProgressText: string;
+  catalogFetchedAt: string | null;
 }
 
 export const DAYS = ['M', 'T', 'W', 'R', 'F'] as const;

@@ -14,13 +14,11 @@ import {
   Collapse,
 } from '@mui/material';
 import { Close, ExpandMore, ExpandLess } from '@mui/icons-material';
-import scheduleConfig from '../scheduleConfig.json';
-import { formatFetchedAt } from '../utils/parser';
 
 interface ImportModalProps {
   open: boolean;
   onClose: () => void;
-  onLoadBasicSchedule: () => Promise<void>;
+  onLoadCatalog: () => Promise<void>;
   onCompleteImport: () => void;
   isLoading: boolean;
   error: string | null;
@@ -28,13 +26,15 @@ interface ImportModalProps {
   progressText: string;
   subjects: Set<string>;
   selectedSubjects: Set<string>;
+  scheduleLabel: string;
+  lastUpdatedLabel: string | null;
   onSubjectToggle: (subject: string) => void;
 }
 
 const ImportModal: React.FC<ImportModalProps> = ({
   open,
   onClose,
-  onLoadBasicSchedule,
+  onLoadCatalog,
   onCompleteImport,
   isLoading,
   error,
@@ -42,13 +42,12 @@ const ImportModal: React.FC<ImportModalProps> = ({
   progressText,
   subjects,
   selectedSubjects,
+  scheduleLabel,
+  lastUpdatedLabel,
   onSubjectToggle,
 }) => {
   const [subjectsExpanded, setSubjectsExpanded] = useState(true);
   const loadRequestedRef = useRef(false);
-
-  const scheduleLabel = `${scheduleConfig.term} ${scheduleConfig.year}`;
-  const lastUpdatedLabel = formatFetchedAt(scheduleConfig.fetchedAt);
 
   useEffect(() => {
     if (!open) {
@@ -59,8 +58,8 @@ const ImportModal: React.FC<ImportModalProps> = ({
       return;
     }
     loadRequestedRef.current = true;
-    void onLoadBasicSchedule();
-  }, [open, subjects.size, isLoading, onLoadBasicSchedule]);
+    void onLoadCatalog();
+  }, [open, subjects.size, isLoading, onLoadCatalog]);
 
   const handleComplete = () => {
     if (selectedSubjects.size === 0) {
@@ -78,7 +77,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
 
   const handleRetry = () => {
     loadRequestedRef.current = true;
-    void onLoadBasicSchedule();
+    void onLoadCatalog();
   };
 
   return (

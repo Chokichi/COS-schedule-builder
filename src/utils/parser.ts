@@ -41,6 +41,109 @@ export function formatFetchedAt(iso?: string | null): string | null {
   });
 }
 
+export type CompactCourse = Omit<Course, '__color' | '__bg' | 'isCustomBlock' | 'customCrn' | 'customField'>;
+
+export interface ScheduleMeta {
+  fetchedAt: string;
+  year: number;
+  term: string;
+  termCode: string;
+}
+
+export interface ScheduleSnapshot extends ScheduleMeta {
+  courses: CompactCourse[];
+  online: CompactCourse[];
+}
+
+export function hydrateCourse(row: CompactCourse): Course {
+  const color = colorFor(row.CRN);
+  return {
+    ...row,
+    __color: color,
+    __bg: color.replace(/^hsl\(([^)]+)\)$/, 'hsla($1, 0.22)'),
+  };
+}
+
+export function hydrateSnapshot(snapshot: ScheduleSnapshot): { courses: Course[]; online: Course[] } {
+  return {
+    courses: (snapshot.courses || []).map(hydrateCourse),
+    online: (snapshot.online || []).map(hydrateCourse),
+  };
+}
+
+export function rematchSavedCourses(saved: Course[], catalog: Course[]): Course[] {
+  const remaining = [...catalog];
+  const result: Course[] = [];
+  for (const course of saved) {
+    if (course.isCustomBlock) {
+      result.push(course);
+      continue;
+    }
+    let idx = remaining.findIndex((candidate) =>
+      candidate.CRN === course.CRN &&
+      candidate.Days === course.Days &&
+      candidate.StartMin === course.StartMin &&
+      candidate.EndMin === course.EndMin
+    );
+    if (idx < 0) {
+      idx = remaining.findIndex((candidate) => candidate.CRN === course.CRN);
+    }
+    if (idx >= 0) {
+      result.push(remaining.splice(idx, 1)[0]);
+    }
+  }
+  return result;
+}
+
+async function fetchJson(url: string): Promise<any | null> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (error) {
+    console.warn(`Failed to fetch ${url}:`, error);
+    return null;
+  }
+}
+
+export async function fetchScheduleMeta(): Promise<ScheduleMeta | null> {
+  const meta = await fetchJson('/api/schedule/meta');
+  if (meta && typeof meta.fetchedAt === 'string') {
+    return {
+      fetchedAt: meta.fetchedAt,
+      year: meta.year,
+      term: meta.term,
+      termCode: meta.termCode,
+    };
+  }
+  return null;
+}
+
+export async function fetchScheduleSnapshot(): Promise<ScheduleSnapshot> {
+  const remote = await fetchJson('/api/schedule');
+  const local = remote || await fetchJson('/schedule-snapshot.json');
+  if (!local || !Array.isArray(local.courses)) {
+    throw new Error('Could not load the course schedule. Please refresh and try again.');
+  }
+  return {
+    fetchedAt: local.fetchedAt,
+    year: local.year,
+    term: local.term,
+    termCode: local.termCode,
+    courses: local.courses,
+    online: local.online || [],
+  };
+}
+
+export function catalogIsStale(localFetchedAt: string | null | undefined, remoteFetchedAt: string): boolean {
+  if (!localFetchedAt) return true;
+  const local = Date.parse(localFetchedAt);
+  const remote = Date.parse(remoteFetchedAt);
+  if (Number.isNaN(remote)) return false;
+  if (Number.isNaN(local)) return true;
+  return remote > local;
+}
+
 export function parseHtmlTable(html: string): { courses: Course[]; online: Course[] } {
   console.log('=== parseHtmlTable START ===');
   
@@ -217,30 +320,6 @@ export function parseHtmlTable(html: string): { courses: Course[]; online: Cours
   
   console.log(`=== parseHtmlTable END: ${courses.length} scheduled courses, ${online.length} online courses ===`);
   return { courses, online };
-}
-
-export async function loadBasicSchedule(): Promise<string> {
-  try {
-    const response = await fetch('/basic-schedule.html');
-    if (!response.ok) {
-      throw new Error('Failed to load basic schedule');
-    }
-    const html = await response.text();
-    
-    // Extract the table content from the HTML file
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
-    const table = doc.querySelector('table.dataentrytable');
-    
-    if (!table) {
-      throw new Error('No valid schedule table found in basic schedule file');
-    }
-    
-    return table.outerHTML;
-  } catch (error) {
-    console.error('Error loading basic schedule:', error);
-    throw new Error('Failed to load the course schedule. Please refresh and try again.');
-  }
 }
 
 // Check if a string is encoded schedule data

@@ -1,0 +1,12 @@
+# Cloudflare Pages + D1. After creating the DB:
+#   npx wrangler d1 create cos-schedule
+# paste the database_id below, then bind DB in the Pages project if the dashboard does not pick this file up.
+
+name = "cos-schedule-builder"
+compatibility_date = "2024-09-01"
+pages_build_output_dir = "build"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "cos-schedule"
+database_id = "6348c651-e81d-401a-83d1-f16f90d9b347"
