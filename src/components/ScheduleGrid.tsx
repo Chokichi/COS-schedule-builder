@@ -484,6 +484,16 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
                 <Typography variant="body2">
                   {displayCourse.Days} {displayCourse.DispTime}
                 </Typography>
+                {(displayCourse.Capacity > 0 || displayCourse.Actual > 0) && (
+                  <Typography variant="body2" sx={{ mt: 0.5 }}>
+                    Seats: {displayCourse.Actual}/{displayCourse.Capacity} ({displayCourse.Remaining} open)
+                  </Typography>
+                )}
+                {(displayCourse.WaitCap > 0 || displayCourse.WaitAct > 0) && (
+                  <Typography variant="body2">
+                    Waitlist: {displayCourse.WaitAct}/{displayCourse.WaitCap} ({displayCourse.WaitRem} open)
+                  </Typography>
+                )}
               </>
             )}
             {isOverlapping && (
