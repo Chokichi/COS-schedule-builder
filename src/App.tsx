@@ -42,7 +42,7 @@ import OnlineCoursesList from './components/OnlineCoursesList';
 import ImportModal from './components/ImportModal';
 import SaveLoadModal from './components/SaveLoadModal';
 import CustomBlockModal from './components/CustomBlockModal';
-import { parseHtmlTable, loadBasicSchedule, encodeCustomBlockForShare, decodeCustomBlockFromShare } from './utils/parser';
+import { parseHtmlTable, loadBasicSchedule, encodeCustomBlockForShare, decodeCustomBlockFromShare, formatFetchedAt } from './utils/parser';
 
 const lightTheme = createTheme({
   palette: {
@@ -183,6 +183,7 @@ function App() {
   const [compareMenuAnchor, setCompareMenuAnchor] = useState<HTMLElement | null>(null);
 
   const scheduleLabel = `${scheduleConfig.term} ${scheduleConfig.year}`;
+  const lastUpdatedLabel = formatFetchedAt(scheduleConfig.fetchedAt);
 
   // Update CSS custom property when courseOpacity changes
   useEffect(() => {
@@ -454,7 +455,7 @@ function App() {
     console.log('❌ Saved data discarded');
   }, [clearLocalStorage]);
 
-  const handleParseHtml = useCallback(async (html: string, isBasicSchedule: boolean = false) => {
+  const handleParseHtml = useCallback(async (html: string) => {
     const startTime = Date.now();
     console.log('🚀 Import started at:', new Date().toLocaleTimeString());
     
@@ -475,7 +476,7 @@ function App() {
         importProgressText: 'Parsing schedule table...' 
       }));
       
-      const parsed = parseHtmlTable(html, isBasicSchedule);
+      const parsed = parseHtmlTable(html);
       const step1Time = Date.now() - step1Start;
       console.log(`📊 Parsing completed in ${step1Time}ms`);
       
@@ -631,7 +632,7 @@ function App() {
 
     try {
       const html = await loadBasicSchedule();
-      await handleParseHtml(html, true); // true = isBasicSchedule
+      await handleParseHtml(html);
     } catch (error) {
       console.error('Failed to load basic schedule:', error);
       setAppState(prev => ({ 
@@ -1390,6 +1391,19 @@ function App() {
           <Typography variant="h6" sx={{ fontSize: '18px', margin: '0 0 4px 0' }}>
             📚 Student Schedule Builder — {scheduleLabel}
           </Typography>
+          {lastUpdatedLabel && (
+            <Typography
+              variant="body2"
+              sx={{
+                fontSize: '14px',
+                fontWeight: 600,
+                color: 'text.primary',
+                margin: '0 0 4px 0',
+              }}
+            >
+              Updated {lastUpdatedLabel}
+            </Typography>
+          )}
           <Typography variant="body2" sx={{ fontSize: '13px', color: 'text.secondary' }}>
             Paste the schedule HTML table or use the {scheduleLabel} basic schedule to build your personalized course schedule.
           </Typography>

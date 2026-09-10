@@ -25,6 +25,7 @@ function readCurrentConfig() {
     const raw = fs.readFileSync(configPath, 'utf8');
     const parsed = JSON.parse(raw);
     return {
+      ...parsed,
       year: parsed.year || new Date().getFullYear(),
       term: parsed.term || 'Fall',
     };
@@ -36,8 +37,9 @@ function readCurrentConfig() {
   }
 }
 
-function writeConfig(year, term) {
+function writeConfig(year, term, extra = {}) {
   const data = {
+    ...extra,
     year,
     term,
   };
@@ -79,7 +81,8 @@ async function main() {
 
   const term = await prompt('Enter term (e.g., Fall, Spring, Summer)', current.term);
 
-  writeConfig(year, term);
+  const { year: _year, term: _term, ...extra } = current;
+  writeConfig(year, term, extra);
 
   console.log('\n✅ Updated src/scheduleConfig.json with:');
   console.log(`   year: ${year}`);

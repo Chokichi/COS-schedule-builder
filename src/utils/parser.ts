@@ -28,7 +28,20 @@ export function colorFor(crn: string): string {
   return `hsl(${x}, 65%, 55%)`;
 }
 
-export function parseHtmlTable(html: string, isBasicSchedule: boolean = false): { courses: Course[]; online: Course[] } {
+export function formatFetchedAt(iso?: string | null): string | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+export function parseHtmlTable(html: string): { courses: Course[]; online: Course[] } {
   console.log('=== parseHtmlTable START ===');
   
   const parser = new DOMParser();
@@ -148,15 +161,7 @@ export function parseHtmlTable(html: string, isBasicSchedule: boolean = false): 
     // Enrollment data - lab sections don't have their own enrollment data
     let capacity, actual, remaining, waitCap, waitAct, waitRem;
     
-    if (isBasicSchedule) {
-      // Basic schedule mode: ignore all enrollment data
-      capacity = 0;
-      actual = 0;
-      remaining = 0;
-      waitCap = 0;
-      waitAct = 0;
-      waitRem = 0;
-    } else if (isContinuation) {
+    if (isContinuation) {
       // Lab sections inherit enrollment data from the lecture section
       // They don't have individual enrollment data, so we use the lecture section's data
       capacity = 0;
@@ -167,7 +172,8 @@ export function parseHtmlTable(html: string, isBasicSchedule: boolean = false): 
       waitRem = 0;
     } else {
       // Lecture sections have their own enrollment data
-      const baseIndex = 15;
+      // Status, CRN, credits, 7 day cells, time, date, location, campus, then enrollment
+      const baseIndex = 14;
       capacity = parseInt(cells[baseIndex]?.textContent?.trim() || '0', 10);
       actual = parseInt(cells[baseIndex + 1]?.textContent?.trim() || '0', 10);
       remaining = parseInt(cells[baseIndex + 2]?.textContent?.trim() || '0', 10);

@@ -22,7 +22,8 @@
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
-    "update-schedule": "node scripts/update-basic-schedule.js"
+    "update-schedule": "node scripts/update-basic-schedule.js",
+    "fetch-schedule": "node scripts/fetch-cos-schedule.js"
   },
   "eslintConfig": {
     "extends": [

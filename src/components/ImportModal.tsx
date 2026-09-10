@@ -15,6 +15,7 @@ import {
 } from '@mui/material';
 import { Close, ContentPaste, ExpandMore, ExpandLess } from '@mui/icons-material';
 import scheduleConfig from '../scheduleConfig.json';
+import { formatFetchedAt } from '../utils/parser';
 
 interface ImportModalProps {
   open: boolean;
@@ -51,6 +52,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
   const [subjectsExpanded, setSubjectsExpanded] = useState(true);
 
   const scheduleLabel = `${scheduleConfig.term} ${scheduleConfig.year}`;
+  const lastUpdatedLabel = formatFetchedAt(scheduleConfig.fetchedAt);
 
   // Debug logging
   React.useEffect(() => {
@@ -312,7 +314,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
                       mb: 1
                     }}
                   >
-                    Having trouble with clipboard? Use our {scheduleLabel} basic schedule instead:
+                    Having trouble with clipboard? Use the {scheduleLabel} schedule snapshot{lastUpdatedLabel ? ` (includes enrollment as of ${lastUpdatedLabel})` : ''}:
                   </Typography>
                   
                   <Button
@@ -352,8 +354,9 @@ const ImportModal: React.FC<ImportModalProps> = ({
                       lineHeight: 1.4
                     }}
                   >
-                    ⚠️ The {scheduleLabel} basic schedule shows course times and locations but not current enrollment data. 
-                    Check the official course search website for up-to-date availability.
+                    {lastUpdatedLabel
+                      ? `Enrollment numbers are from the ${scheduleLabel} snapshot updated ${lastUpdatedLabel}. Seat counts can still change on the official course search website.`
+                      : `The ${scheduleLabel} snapshot includes course times, locations, and enrollment from the last successful fetch. Seat counts can still change on the official course search website.`}
                   </Typography>
                 </Box>
               </Box>

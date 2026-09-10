@@ -1,0 +1,38 @@
+name: Fetch COS schedule
+
+on:
+  schedule:
+    # 08:00 Pacific during PDT (07:00 during PST).
+    # For registration week, temporarily change this to e.g. "0 */6 * * *".
+    - cron: "0 15 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Fetch COS class schedule
+        run: node scripts/fetch-cos-schedule.js
+
+      - name: Commit updated snapshot
+        run: |
+          git add public/basic-schedule.html src/scheduleConfig.json
+          if git diff --staged --quiet; then
+            echo "No schedule changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update COS class schedule snapshot"
+          git push
