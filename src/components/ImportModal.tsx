@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -13,14 +13,13 @@ import {
   Chip,
   Collapse,
 } from '@mui/material';
-import { Close, ContentPaste, ExpandMore, ExpandLess } from '@mui/icons-material';
+import { Close, ExpandMore, ExpandLess } from '@mui/icons-material';
 import scheduleConfig from '../scheduleConfig.json';
 import { formatFetchedAt } from '../utils/parser';
 
 interface ImportModalProps {
   open: boolean;
   onClose: () => void;
-  onParseHtml: (html: string) => Promise<void>;
   onLoadBasicSchedule: () => Promise<void>;
   onCompleteImport: () => void;
   isLoading: boolean;
@@ -30,13 +29,11 @@ interface ImportModalProps {
   subjects: Set<string>;
   selectedSubjects: Set<string>;
   onSubjectToggle: (subject: string) => void;
-  parsedData: any; // Data from parsing step
 }
 
 const ImportModal: React.FC<ImportModalProps> = ({
   open,
   onClose,
-  onParseHtml,
   onLoadBasicSchedule,
   onCompleteImport,
   isLoading,
@@ -46,62 +43,42 @@ const ImportModal: React.FC<ImportModalProps> = ({
   subjects,
   selectedSubjects,
   onSubjectToggle,
-  parsedData,
 }) => {
-  const [currentStep, setCurrentStep] = useState<'parse' | 'select'>('parse');
   const [subjectsExpanded, setSubjectsExpanded] = useState(true);
+  const loadRequestedRef = useRef(false);
 
   const scheduleLabel = `${scheduleConfig.term} ${scheduleConfig.year}`;
   const lastUpdatedLabel = formatFetchedAt(scheduleConfig.fetchedAt);
 
-  // Debug logging
-  React.useEffect(() => {
-    console.log('🔍 ImportModal subjects:', Array.from(subjects));
-    console.log('🔍 ImportModal selectedSubjects:', Array.from(selectedSubjects));
-  }, [subjects, selectedSubjects]);
-
-  const handleParseFromClipboard = async () => {
-    try {
-      const text = await navigator.clipboard.readText();
-      console.log('🔍 Step 1: Parsing from clipboard');
-      await onParseHtml(text);
-      // Move to step 2 after parsing completes
-      setCurrentStep('select');
-    } catch (err) {
-      console.error('Failed to read clipboard:', err);
+  useEffect(() => {
+    if (!open) {
+      loadRequestedRef.current = false;
+      return;
     }
-  };
-
-  const handleLoadBasicSchedule = async () => {
-    try {
-      console.log('🔍 Step 1: Loading basic schedule');
-      await onLoadBasicSchedule();
-      // Move to step 2 after loading completes
-      setCurrentStep('select');
-    } catch (err) {
-      console.error('Failed to load basic schedule:', err);
+    if (subjects.size > 0 || isLoading || loadRequestedRef.current) {
+      return;
     }
-  };
+    loadRequestedRef.current = true;
+    void onLoadBasicSchedule();
+  }, [open, subjects.size, isLoading, onLoadBasicSchedule]);
 
-
-  const handleCompleteImport = () => {
+  const handleComplete = () => {
     if (selectedSubjects.size === 0) {
       alert('Please select at least one subject before continuing.');
       return;
     }
-    console.log('🔍 Step 2: Completing import with selected subjects');
     onCompleteImport();
   };
 
   const handleClose = () => {
     if (!isLoading) {
-      setCurrentStep('parse');
       onClose();
     }
   };
 
-  const handleBackToParse = () => {
-    setCurrentStep('parse');
+  const handleRetry = () => {
+    loadRequestedRef.current = true;
+    void onLoadBasicSchedule();
   };
 
   return (
@@ -123,9 +100,9 @@ const ImportModal: React.FC<ImportModalProps> = ({
         },
       }}
     >
-      <DialogTitle sx={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
+      <DialogTitle sx={{
+        display: 'flex',
+        justifyContent: 'space-between',
         alignItems: 'center',
         padding: '20px 24px 16px 24px',
         borderBottom: (theme) => theme.palette.mode === 'dark'
@@ -133,20 +110,22 @@ const ImportModal: React.FC<ImportModalProps> = ({
           : '1px solid #e5e7eb',
       }}>
         <Box>
-          <Typography variant="h5" sx={{ 
-            fontSize: '20px', 
+          <Typography variant="h5" sx={{
+            fontSize: '20px',
             fontWeight: 'bold',
             color: 'text.primary',
             margin: 0,
           }}>
-            📚 Import Schedule Data
+            Select Subjects
           </Typography>
-          <Typography variant="body2" sx={{ 
-            fontSize: '14px', 
+          <Typography variant="body2" sx={{
+            fontSize: '14px',
             color: 'text.secondary',
             marginTop: '4px',
           }}>
-            Paste the schedule HTML table or use clipboard to import course data
+            {lastUpdatedLabel
+              ? `${scheduleLabel} schedule, updated ${lastUpdatedLabel}`
+              : `${scheduleLabel} course schedule`}
           </Typography>
         </Box>
         <IconButton
@@ -163,63 +142,20 @@ const ImportModal: React.FC<ImportModalProps> = ({
 
       <DialogContent sx={{ padding: '24px' }}>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {/* Step Indicator */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-            <Box sx={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: 1,
-              padding: '8px 16px',
-              borderRadius: '20px',
-              background: currentStep === 'parse' 
-                ? 'linear-gradient(135deg, #2563eb, #059669)' 
-                : (theme) => theme.palette.mode === 'dark' ? '#2a3c55' : '#e5e7eb',
-              color: currentStep === 'parse' ? 'white' : 'text.secondary',
-              fontSize: '14px',
-              fontWeight: '600',
-            }}>
-              <span>1</span>
-              <span>Parse Data</span>
-            </Box>
-            <Box sx={{ 
-              width: '20px', 
-              height: '2px', 
-              background: (theme) => theme.palette.mode === 'dark' ? '#2a3c55' : '#e5e7eb',
-              borderRadius: '1px'
-            }} />
-            <Box sx={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: 1,
-              padding: '8px 16px',
-              borderRadius: '20px',
-              background: currentStep === 'select' 
-                ? 'linear-gradient(135deg, #2563eb, #059669)' 
-                : (theme) => theme.palette.mode === 'dark' ? '#2a3c55' : '#e5e7eb',
-              color: currentStep === 'select' ? 'white' : 'text.secondary',
-              fontSize: '14px',
-              fontWeight: '600',
-            }}>
-              <span>2</span>
-              <span>Select Subjects</span>
-            </Box>
-          </Box>
-
-          {/* Progress Bar */}
           {isLoading && (
-            <Box sx={{ width: '100%', mt: 2 }}>
+            <Box sx={{ width: '100%' }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                 <Typography variant="body2" sx={{ fontSize: '13px', color: 'text.secondary', fontWeight: 500 }}>
-                  {progressText}
+                  {progressText || 'Loading schedule...'}
                 </Typography>
-                <Typography variant="body2" sx={{ 
-                  fontSize: '13px', 
+                <Typography variant="body2" sx={{
+                  fontSize: '13px',
                   color: 'text.secondary',
                   fontWeight: 600,
                   background: (theme) => theme.palette.mode === 'dark' ? '#2a3c55' : '#f3f4f6',
                   padding: '2px 8px',
                   borderRadius: '12px',
-                  border: (theme) => theme.palette.mode === 'dark' ? '1px solid #3a4a5c' : '1px solid #d1d5db'
+                  border: (theme) => theme.palette.mode === 'dark' ? '1px solid #3a4a5c' : '1px solid #d1d5db',
                 }}>
                   {Math.round(progress)}%
                 </Typography>
@@ -242,147 +178,16 @@ const ImportModal: React.FC<ImportModalProps> = ({
             </Box>
           )}
 
-          {/* Step 1: Parse Data */}
-          {currentStep === 'parse' && (
+          {subjects.size > 0 && (
             <Box>
-              <Typography variant="h6" sx={{
-                fontSize: '18px',
-                marginBottom: '16px',
-                color: 'text.primary',
-                fontWeight: '600',
-              }}>
-                Step 1: Import Schedule Data
-              </Typography>
-              
               <Typography variant="body1" sx={{
                 fontSize: '14px',
                 color: 'text.secondary',
                 marginBottom: '20px',
                 lineHeight: 1.6,
               }}>
-                Click the button below to automatically import schedule data from your clipboard. 
-                Visit the schedule website, right-click → View Page Source, find and copy the 
-                &lt;table class="dataentrytable"&gt; element, then click the button.
-              </Typography>
-
-              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, mt: 3 }}>
-                <Button
-                  variant="contained"
-                  startIcon={<ContentPaste />}
-                  onClick={handleParseFromClipboard}
-                  disabled={isLoading}
-                  sx={{
-                    background: 'linear-gradient(90deg, #2563eb, #059669)',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '12px',
-                    fontSize: '16px',
-                    padding: '12px 32px',
-                    textTransform: 'none',
-                    fontWeight: '600',
-                    '&:hover': {
-                      background: 'linear-gradient(90deg, #1d4ed8, #047857)',
-                    },
-                    '&:disabled': {
-                      background: (theme) => theme.palette.mode === 'dark' ? '#2a3c55' : '#e5e7eb',
-                      color: 'text.disabled',
-                    }
-                  }}
-                >
-                  📋 Import from Clipboard
-                </Button>
-
-                {/* Basic Schedule Option */}
-                <Box sx={{ 
-                  display: 'flex', 
-                  flexDirection: 'column', 
-                  alignItems: 'center', 
-                  gap: 1,
-                  mt: 2,
-                  p: 2,
-                  background: (theme) => theme.palette.mode === 'dark' ? '#1a2330' : '#f8fafc',
-                  borderRadius: '8px',
-                  border: (theme) => theme.palette.mode === 'dark' ? '1px solid #2a3c55' : '1px solid #e5e7eb',
-                  maxWidth: '400px',
-                }}>
-                  <Typography
-                    variant="body2"
-                    sx={{ 
-                      fontSize: '13px', 
-                      color: 'text.secondary',
-                      textAlign: 'center',
-                      mb: 1
-                    }}
-                  >
-                    Having trouble with clipboard? Use the {scheduleLabel} schedule snapshot{lastUpdatedLabel ? ` (includes enrollment as of ${lastUpdatedLabel})` : ''}:
-                  </Typography>
-                  
-                  <Button
-                    variant="outlined"
-                    onClick={handleLoadBasicSchedule}
-                    disabled={isLoading}
-                    sx={{
-                      background: (theme) => theme.palette.mode === 'dark' ? '#0f1622' : '#ffffff',
-                      color: 'text.primary',
-                      border: (theme) => theme.palette.mode === 'dark' ? '1px solid #2a3c55' : '1px solid #d1d5db',
-                      borderRadius: '8px',
-                      fontSize: '14px',
-                      padding: '8px 16px',
-                      textTransform: 'none',
-                      fontWeight: '500',
-                      '&:hover': {
-                        background: (theme) => theme.palette.mode === 'dark' ? '#1a2532' : '#f3f4f6',
-                      },
-                      '&:disabled': {
-                        background: (theme) => theme.palette.mode === 'dark' ? '#0f1622' : '#ffffff',
-                        color: 'text.disabled',
-                      }
-                    }}
-                  >
-                    📅 Use Basic Schedule
-                  </Button>
-
-                  
-                  <Typography
-                    variant="caption"
-                    sx={{ 
-                      fontSize: '11px', 
-                      color: 'text.secondary',
-                      textAlign: 'center',
-                      fontStyle: 'italic',
-                      maxWidth: '350px',
-                      lineHeight: 1.4
-                    }}
-                  >
-                    {lastUpdatedLabel
-                      ? `Enrollment numbers are from the ${scheduleLabel} snapshot updated ${lastUpdatedLabel}. Seat counts can still change on the official course search website.`
-                      : `The ${scheduleLabel} snapshot includes course times, locations, and enrollment from the last successful fetch. Seat counts can still change on the official course search website.`}
-                  </Typography>
-                </Box>
-              </Box>
-            </Box>
-          )}
-
-          {/* Step 2: Select Subjects */}
-          {currentStep === 'select' && subjects.size > 0 && (
-            <Box>
-              <Typography variant="h6" sx={{
-                fontSize: '18px',
-                marginBottom: '16px',
-                color: 'text.primary',
-                fontWeight: '600',
-              }}>
-                Step 2: Select Subjects to Import
-              </Typography>
-              
-              <Typography variant="body1" sx={{
-                fontSize: '14px',
-                color: 'text.secondary',
-                marginBottom: '20px',
-                lineHeight: 1.6,
-              }}>
-                Choose which subjects you want to include in your schedule. 
-                You must select at least one subject to continue.
+                Choose which subjects you want to include in your schedule.
+                Select at least one subject to continue.
               </Typography>
 
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
@@ -401,12 +206,12 @@ const ImportModal: React.FC<ImportModalProps> = ({
                   {subjectsExpanded ? <ExpandLess /> : <ExpandMore />}
                 </IconButton>
               </Box>
-              
+
               <Collapse in={subjectsExpanded}>
-                <Box sx={{ 
-                  display: 'flex', 
-                  flexWrap: 'wrap', 
-                  gap: 1, 
+                <Box sx={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: 1,
                   mb: 2,
                   padding: '16px',
                   background: (theme) => theme.palette.mode === 'dark' ? '#0f1622' : '#f8fafc',
@@ -427,7 +232,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
                         padding: '1px 1px',
                         height: '28px',
                         fontSize: '13px',
-                        background: selectedSubjects.has(subject) 
+                        background: selectedSubjects.has(subject)
                           ? 'linear-gradient(135deg, #2563eb, #059669)'
                           : undefined,
                         color: selectedSubjects.has(subject) ? 'white' : undefined,
@@ -439,24 +244,24 @@ const ImportModal: React.FC<ImportModalProps> = ({
                         '&.MuiChip-colorPrimary': {
                           borderColor: 'transparent',
                           boxShadow: '0 2px 8px rgba(37, 99, 235, 0.3)',
-                        }
+                        },
                       }}
                     />
                   ))}
                 </Box>
-                
+
                 {selectedSubjects.size === 0 && (
-                  <Alert severity="warning" sx={{ 
+                  <Alert severity="warning" sx={{
                     '& .MuiAlert-message': { fontSize: '13px' },
                     borderRadius: '8px',
                     mb: 2,
                   }}>
-                    Please select at least one subject to import courses from.
+                    Please select at least one subject to view courses.
                   </Alert>
                 )}
 
                 {selectedSubjects.size > 0 && (
-                  <Alert severity="success" sx={{ 
+                  <Alert severity="success" sx={{
                     '& .MuiAlert-message': { fontSize: '13px' },
                     borderRadius: '8px',
                     mb: 2,
@@ -468,14 +273,18 @@ const ImportModal: React.FC<ImportModalProps> = ({
             </Box>
           )}
 
-          {/* Error Display */}
           {error && (
-            <Alert 
-              severity="error" 
-              sx={{ 
+            <Alert
+              severity="error"
+              sx={{
                 '& .MuiAlert-message': { fontSize: '13px' },
                 borderRadius: '8px',
               }}
+              action={
+                <Button color="inherit" size="small" onClick={handleRetry} disabled={isLoading}>
+                  Retry
+                </Button>
+              }
             >
               {error}
             </Alert>
@@ -483,7 +292,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
         </Box>
       </DialogContent>
 
-      <DialogActions sx={{ 
+      <DialogActions sx={{
         padding: '16px 24px 24px 24px',
         borderTop: (theme) => theme.palette.mode === 'dark'
           ? '1px solid #2a3c55'
@@ -500,74 +309,35 @@ const ImportModal: React.FC<ImportModalProps> = ({
             textTransform: 'none',
             '&:hover': {
               background: (theme) => theme.palette.mode === 'dark' ? '#1a2532' : '#f3f4f6',
-            }
+            },
           }}
         >
           Cancel
         </Button>
-        
-        <Box sx={{ display: 'flex', gap: '12px' }}>
-          {/* Step 1: Parse Data - No action buttons needed, handled in content */}
-          {currentStep === 'parse' && (
-            <Typography variant="body2" sx={{ 
-              color: 'text.secondary', 
-              fontSize: '13px',
-              alignSelf: 'center',
-              fontStyle: 'italic'
-            }}>
-              Click the import button above to begin
-            </Typography>
-          )}
-          
-          {/* Step 2: Select Subjects */}
-          {currentStep === 'select' && (
-            <>
-              <Button
-                variant="outlined"
-                onClick={handleBackToParse}
-                disabled={isLoading}
-                sx={{
-                  background: (theme) => theme.palette.mode === 'dark' ? '#0f1622' : '#ffffff',
-                  color: 'text.primary',
-                  border: (theme) => theme.palette.mode === 'dark' ? '1px solid #2a3c55' : '1px solid #d1d5db',
-                  borderRadius: '8px',
-                  fontSize: '14px',
-                  padding: '8px 16px',
-                  textTransform: 'none',
-                  '&:hover': {
-                    background: (theme) => theme.palette.mode === 'dark' ? '#1a2532' : '#f3f4f6',
-                  }
-                }}
-              >
-                ← Back to Parse
-              </Button>
-              
-              <Button
-                variant="contained"
-                onClick={handleCompleteImport}
-                disabled={isLoading || selectedSubjects.size === 0}
-                sx={{
-                  background: 'linear-gradient(90deg, #2563eb, #059669)',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '14px',
-                  padding: '8px 16px',
-                  textTransform: 'none',
-                  '&:hover': {
-                    background: 'linear-gradient(90deg, #1d4ed8, #047857)',
-                  },
-                  '&:disabled': {
-                    background: (theme) => theme.palette.mode === 'dark' ? '#2a3c55' : '#e5e7eb',
-                    color: 'text.disabled',
-                  }
-                }}
-              >
-                ✓ Complete Import
-              </Button>
-            </>
-          )}
-        </Box>
+
+        <Button
+          variant="contained"
+          onClick={handleComplete}
+          disabled={isLoading || selectedSubjects.size === 0}
+          sx={{
+            background: 'linear-gradient(90deg, #2563eb, #059669)',
+            color: 'white',
+            border: 'none',
+            borderRadius: '8px',
+            fontSize: '14px',
+            padding: '8px 16px',
+            textTransform: 'none',
+            '&:hover': {
+              background: 'linear-gradient(90deg, #1d4ed8, #047857)',
+            },
+            '&:disabled': {
+              background: (theme) => theme.palette.mode === 'dark' ? '#2a3c55' : '#e5e7eb',
+              color: 'text.disabled',
+            },
+          }}
+        >
+          Continue
+        </Button>
       </DialogActions>
     </Dialog>
   );

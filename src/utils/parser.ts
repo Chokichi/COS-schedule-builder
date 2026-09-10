@@ -239,7 +239,7 @@ export async function loadBasicSchedule(): Promise<string> {
     return table.outerHTML;
   } catch (error) {
     console.error('Error loading basic schedule:', error);
-    throw new Error('Failed to load basic schedule. Please try the live import instead.');
+    throw new Error('Failed to load the course schedule. Please refresh and try again.');
   }
 }
 

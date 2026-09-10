@@ -181,6 +181,7 @@ function App() {
   const [compareSchedule1Id, setCompareSchedule1Id] = useState<string | ''>('');
   const [compareSchedule2Id, setCompareSchedule2Id] = useState<string | ''>('');
   const [compareMenuAnchor, setCompareMenuAnchor] = useState<HTMLElement | null>(null);
+  const catalogLoadStartedRef = React.useRef(false);
 
   const scheduleLabel = `${scheduleConfig.term} ${scheduleConfig.year}`;
   const lastUpdatedLabel = formatFetchedAt(scheduleConfig.fetchedAt);
@@ -400,8 +401,6 @@ function App() {
       console.log('🔍 Setting restore prompt to true');
       setShowRestorePrompt(true);
     } else {
-      // No saved data - automatically open ImportModal to help new users get started
-      console.log('👋 No saved data found - opening ImportModal to help user get started');
       setImportModalOpen(true);
     }
   }, [loadFromLocalStorage]);
@@ -451,7 +450,9 @@ function App() {
 
   const handleDiscardData = useCallback(() => {
     clearLocalStorage();
+    catalogLoadStartedRef.current = false;
     setShowRestorePrompt(false);
+    setImportModalOpen(true);
     console.log('❌ Saved data discarded');
   }, [clearLocalStorage]);
 
@@ -617,28 +618,34 @@ function App() {
         importProgress: 0,
         importProgressText: '',
       }));
+      throw error;
     }
   }, []);
 
   const handleLoadBasicSchedule = useCallback(async () => {
+    if (catalogLoadStartedRef.current) {
+      return;
+    }
+    catalogLoadStartedRef.current = true;
     console.log('🔄 Loading basic schedule...');
     setAppState(prev => ({ 
       ...prev, 
       isLoading: true, 
       error: null,
       importProgress: 0,
-      importProgressText: 'Loading basic schedule...'
+      importProgressText: 'Loading schedule...'
     }));
 
     try {
       const html = await loadBasicSchedule();
       await handleParseHtml(html);
     } catch (error) {
+      catalogLoadStartedRef.current = false;
       console.error('Failed to load basic schedule:', error);
       setAppState(prev => ({ 
         ...prev, 
         isLoading: false, 
-        error: error instanceof Error ? error.message : 'Failed to load basic schedule'
+        error: error instanceof Error ? error.message : 'Failed to load schedule'
       }));
     }
   }, [handleParseHtml]);
@@ -1340,7 +1347,7 @@ function App() {
           </div>
           
           <div style="margin-top: 20px; padding: 10px; background: #e7f3ff; border: 1px solid #b3d9ff; border-radius: 5px; font-size: 14px; color: #0066cc;">
-            <strong>Instructions:</strong> To load this schedule, first import the available courses using the "Import Schedule" button, then use the "Load" button and paste the encoded string above.
+            <strong>Instructions:</strong> To load this schedule, open the schedule builder, select the same subjects, then use the "Load" button and paste the encoded string above.
           </div>
         </div>
       </body>
@@ -1405,7 +1412,7 @@ function App() {
             </Typography>
           )}
           <Typography variant="body2" sx={{ fontSize: '13px', color: 'text.secondary' }}>
-            Paste the schedule HTML table or use the {scheduleLabel} basic schedule to build your personalized course schedule.
+            Build your {scheduleLabel} course schedule. Choose a subject to get started.
           </Typography>
         </Box>
         
@@ -1456,7 +1463,7 @@ function App() {
                   }
                 }}
               >
-                📚 Import Schedule Data
+                Select Subjects
               </Button>
             </Box>
 
@@ -2259,7 +2266,6 @@ function App() {
         <ImportModal
           open={importModalOpen}
           onClose={() => setImportModalOpen(false)}
-          onParseHtml={handleParseHtml}
           onLoadBasicSchedule={handleLoadBasicSchedule}
           onCompleteImport={() => setImportModalOpen(false)}
           isLoading={appState.isLoading}
@@ -2269,7 +2275,6 @@ function App() {
           subjects={appState.subjects}
           selectedSubjects={appState.filters.subjectAllow}
           onSubjectToggle={(subject) => handleFilterChange({ subjectAllow: new Set([...appState.filters.subjectAllow].includes(subject) ? [...appState.filters.subjectAllow].filter(s => s !== subject) : [...appState.filters.subjectAllow, subject]) })}
-          parsedData={appState.allCourses}
         />
 
       {/* Save/Load Modal */}
