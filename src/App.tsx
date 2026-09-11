@@ -193,6 +193,30 @@ function buildCatalogFields(courses: Course[], online: Course[]) {
   };
 }
 
+function emptyFilters(): FilterState {
+  return {
+    subjectAllow: new Set(),
+    courseAllow: new Set(),
+    instructorAllow: new Set(),
+    campusAllow: new Set(),
+    showOnline: false,
+    showFullClasses: false,
+    showFullWaitlist: false,
+  };
+}
+
+function hasRestorableSession(data: {
+  mySchedule?: unknown[];
+  myOnlineClasses?: unknown[];
+  customBlocks?: unknown[];
+  filters?: { subjectAllow?: Set<string> };
+}): boolean {
+  return (data.mySchedule?.length || 0) > 0
+    || (data.myOnlineClasses?.length || 0) > 0
+    || (data.customBlocks?.length || 0) > 0
+    || (data.filters?.subjectAllow?.size || 0) > 0;
+}
+
 function App() {
   const [appState, setAppState] = useState<AppState>(initialAppState);
   const [isLightMode, setIsLightMode] = useState(false);
@@ -375,12 +399,8 @@ function App() {
         console.log('🔍 Data timestamp:', data.timestamp);
         console.log('🔍 All courses length:', data.allCourses?.length);
         console.log('🔍 Custom blocks length:', data.customBlocks?.length);
-        
-        // Check if data is recent (within 7 days)
-        const isRecent = data.timestamp && (Date.now() - data.timestamp) < (7 * 24 * 60 * 60 * 1000);
-        console.log('🔍 Data is recent:', isRecent);
-        
-        if (isRecent && data.allCourses && data.allCourses.length > 0) {
+
+        if (data.allCourses && data.allCourses.length > 0) {
           return {
             allCourses: data.allCourses,
             onlineCourses: data.onlineCourses || [],
@@ -431,6 +451,46 @@ function App() {
     }
   }, []);
 
+  const persistCatalogOnly = useCallback((savedData: NonNullable<ReturnType<typeof loadFromLocalStorage>>) => {
+    try {
+      const dataToSave = {
+        allCourses: savedData.allCourses,
+        onlineCourses: savedData.onlineCourses,
+        mySchedule: [],
+        myOnlineClasses: [],
+        subjects: Array.from(savedData.subjects),
+        courses: Array.from(savedData.courses),
+        instructors: Array.from(savedData.instructors),
+        campuses: Array.from(savedData.campuses),
+        subjectData: Array.from(savedData.subjectData.entries()).map(([key, value]) => [
+          key,
+          {
+            courses: value.courses,
+            courseNumbers: Array.from(value.courseNumbers),
+            instructors: Array.from(value.instructors),
+            campuses: Array.from(value.campuses),
+          }
+        ]),
+        filters: {
+          subjectAllow: [],
+          courseAllow: [],
+          instructorAllow: [],
+          campusAllow: [],
+          showOnline: false,
+          showFullClasses: false,
+          showFullWaitlist: false,
+        },
+        customBlocks: [],
+        isLightMode: savedData.isLightMode,
+        catalogFetchedAt: savedData.catalogFetchedAt,
+        timestamp: Date.now(),
+      };
+      localStorage.setItem('ssb_data', JSON.stringify(dataToSave));
+    } catch (error) {
+      console.error('Failed to keep local catalog:', error);
+    }
+  }, []);
+
   // Auto-save effect
   React.useEffect(() => {
     if (appState.allCourses.length > 0) {
@@ -438,19 +498,6 @@ function App() {
       return () => clearTimeout(timeoutId);
     }
   }, [appState, saveToLocalStorage]);
-
-  // Load data on mount
-  React.useEffect(() => {
-    console.log('🔍 Checking for saved data on mount...');
-    const savedData = loadFromLocalStorage();
-    console.log('🔍 Saved data found:', !!savedData);
-    if (savedData) {
-      console.log('🔍 Setting restore prompt to true');
-      setShowRestorePrompt(true);
-    } else {
-      setImportModalOpen(true);
-    }
-  }, [loadFromLocalStorage]);
 
   const applySnapshot = useCallback((snapshot: ScheduleSnapshot, options: {
     mySchedule?: Course[];
@@ -516,10 +563,10 @@ function App() {
       }
 
       const remoteFetchedAt = meta?.fetchedAt;
+      // Only download the full snapshot when we have no local catalog, or the
+      // tiny /api/schedule/meta timestamp is newer than what we already have.
       const needFull = !hasLocalCatalog
-        || !localFetchedAt
-        || !remoteFetchedAt
-        || catalogIsStale(localFetchedAt, remoteFetchedAt);
+        || (Boolean(remoteFetchedAt) && catalogIsStale(localFetchedAt, remoteFetchedAt));
 
       if (!needFull) {
         setAppState(prev => ({
@@ -573,6 +620,44 @@ function App() {
     }
   }, [applySnapshot]);
 
+  // Load data on mount
+  React.useEffect(() => {
+    console.log('🔍 Checking for saved data on mount...');
+    const savedData = loadFromLocalStorage();
+    console.log('🔍 Saved data found:', !!savedData);
+    if (savedData && hasRestorableSession(savedData)) {
+      console.log('🔍 Setting restore prompt to true');
+      setShowRestorePrompt(true);
+      return;
+    }
+    setImportModalOpen(true);
+    if (savedData?.allCourses.length) {
+      setAppState(prev => ({
+        ...prev,
+        allCourses: savedData.allCourses,
+        onlineCourses: savedData.onlineCourses,
+        subjects: savedData.subjects,
+        courses: savedData.courses,
+        instructors: savedData.instructors,
+        campuses: savedData.campuses,
+        subjectData: savedData.subjectData as Map<string, SubjectData>,
+        catalogFetchedAt: savedData.catalogFetchedAt || null,
+        mySchedule: [],
+        myOnlineClasses: [],
+        customBlocks: [],
+        filters: emptyFilters(),
+      }));
+      setIsLightMode(savedData.isLightMode);
+      void syncCatalog({
+        localFetchedAt: savedData.catalogFetchedAt || null,
+        hasLocalCatalog: true,
+        mySchedule: [],
+        myOnlineClasses: [],
+        customBlocks: [],
+      });
+    }
+  }, [loadFromLocalStorage, syncCatalog]);
+
   const handleRestoreData = useCallback(() => {
     const savedData = loadFromLocalStorage();
     if (savedData) {
@@ -607,12 +692,44 @@ function App() {
   }, [loadFromLocalStorage, syncCatalog]);
 
   const handleDiscardData = useCallback(() => {
-    clearLocalStorage();
+    const savedData = loadFromLocalStorage();
     syncingCatalogRef.current = false;
     setShowRestorePrompt(false);
+
+    if (savedData?.allCourses.length) {
+      persistCatalogOnly(savedData);
+      setAppState(prev => ({
+        ...prev,
+        allCourses: savedData.allCourses,
+        onlineCourses: savedData.onlineCourses,
+        subjects: savedData.subjects,
+        courses: savedData.courses,
+        instructors: savedData.instructors,
+        campuses: savedData.campuses,
+        subjectData: savedData.subjectData as Map<string, SubjectData>,
+        catalogFetchedAt: savedData.catalogFetchedAt || null,
+        mySchedule: [],
+        myOnlineClasses: [],
+        customBlocks: [],
+        filters: emptyFilters(),
+      }));
+      setIsLightMode(savedData.isLightMode);
+      setImportModalOpen(true);
+      void syncCatalog({
+        localFetchedAt: savedData.catalogFetchedAt || null,
+        hasLocalCatalog: true,
+        mySchedule: [],
+        myOnlineClasses: [],
+        customBlocks: [],
+      });
+      console.log('❌ Saved schedule discarded; kept local catalog');
+      return;
+    }
+
+    clearLocalStorage();
     setImportModalOpen(true);
     console.log('❌ Saved data discarded');
-  }, [clearLocalStorage]);
+  }, [loadFromLocalStorage, persistCatalogOnly, syncCatalog, clearLocalStorage]);
 
   const handleLoadCatalog = useCallback(async () => {
     await syncCatalog({
