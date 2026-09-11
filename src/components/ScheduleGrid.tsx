@@ -7,6 +7,7 @@ import {
   Paper,
 } from '@mui/material';
 import { Course, FilterState, CustomTimeBlock, DAYS, DAY_LABELS, PX_PER_HOUR, DAY_START_MIN, DAY_END_MIN } from '../types';
+import { customBlocksToCourses, conflictingCrns } from '../utils/conflicts';
 
 const TIME_COL_WIDTH = 60;
 const VISIBLE_DAYS = 2;
@@ -49,67 +50,12 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
   const twoDayCol = `calc((100cqi - ${TIME_COL_WIDTH}px - ${NEXT_DAY_PEEK}px) / ${VISIBLE_DAYS})`;
 
   // Convert custom blocks to course-like objects for display
-  const customBlockCourses = useMemo(() => {
-    const result: Course[] = [];
-    
-    customBlocks.forEach(block => {
-      block.days.forEach(day => {
-        const dayMap: { [key: string]: string } = {
-          'Monday': 'M',
-          'Tuesday': 'T', 
-          'Wednesday': 'W',
-          'Thursday': 'R',
-          'Friday': 'F'
-        };
-        
-        const dayCode = dayMap[day];
-        if (dayCode && block.times[day]) {
-          const { start, end } = block.times[day];
-          
-          // Convert time strings to minutes
-          const timeToMinutes = (timeStr: string): number => {
-            const [time, period] = timeStr.split(' ');
-            const [hours, minutes] = time.split(':').map(Number);
-            let totalMinutes = hours * 60 + minutes;
-            if (period === 'PM' && hours !== 12) totalMinutes += 12 * 60;
-            if (period === 'AM' && hours === 12) totalMinutes -= 12 * 60;
-            return totalMinutes;
-          };
-          
-          const startMin = timeToMinutes(start);
-          const endMin = timeToMinutes(end);
-          
-          result.push({
-            CRN: block.id,
-            Subject: 'Custom',
-            Course: 'Block',
-            Title: block.title,
-            Instructor: block.instructor || '',
-            Days: dayCode,
-            DispTime: `${start} - ${end}`,
-            StartMin: startMin,
-            EndMin: endMin,
-            Units: 0,
-            Campus: block.campus || '',
-            Location: block.location || '',
-            Capacity: 0,
-            Actual: 0,
-            Remaining: 0,
-            WaitCap: 0,
-            WaitAct: 0,
-            WaitRem: 0,
-            __color: block.color,
-            __bg: block.color,
-            isCustomBlock: true,
-            customCrn: block.crn,
-            customField: block.customField,
-          });
-        }
-      });
-    });
-    
-    return result;
-  }, [customBlocks]);
+  const customBlockCourses = useMemo(() => customBlocksToCourses(customBlocks), [customBlocks]);
+
+  const conflictCrnSet = useMemo(() => {
+    if (isMySchedule) return new Set<string>();
+    return conflictingCrns(courses, [...mySchedule, ...customBlockCourses]);
+  }, [isMySchedule, courses, mySchedule, customBlockCourses]);
 
   // Mobile detection
   React.useEffect(() => {
@@ -185,8 +131,9 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
       // Full waitlist filter - skip for lab sections (they don't have enrollment data)
       const isWaitlistFull = course.WaitRem <= 0 && course.WaitCap > 0;
       const waitlistOk = filters.showFullWaitlist || !isWaitlistFull;
+      const conflictOk = filters.showConflicts || !conflictCrnSet.has(course.CRN);
       
-      return subjOk && courseOk && instrOk && campusOk && fullOk && waitlistOk;
+      return subjOk && courseOk && instrOk && campusOk && fullOk && waitlistOk && conflictOk;
     });
     
     // Get CRNs of lecture sections that passed the filter
@@ -229,13 +176,15 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
       if (isWaitlistFull && !filters.showFullWaitlist) {
         console.log(`Filtering out full waitlist: ${course.Subject} ${course.Course} - WaitRem: ${course.WaitRem}, WaitCap: ${course.WaitCap}`);
       }
+
+      const conflictOk = filters.showConflicts || !conflictCrnSet.has(course.CRN);
       
-      return subjOk && courseOk && instrOk && campusOk && fullOk && waitlistOk;
+      return subjOk && courseOk && instrOk && campusOk && fullOk && waitlistOk && conflictOk;
     });
     
     console.log(`Final result: ${filtered.length} courses after filtering`);
     return filtered;
-  }, [courses, customBlockCourses, mySchedule, filters, isMySchedule]);
+  }, [courses, customBlockCourses, mySchedule, filters, isMySchedule, conflictCrnSet]);
 
   // Use shared time range if provided, otherwise calculate from filtered courses
   const timeRange = useMemo(() => {
@@ -439,6 +388,7 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
     const displayCourse = isOverlapping && overlappingGroup 
       ? overlappingGroup.courses[overlappingGroup.currentIndex] 
       : course;
+    const isConflicted = !isMySchedule && conflictCrnSet.has(course.CRN);
 
     return (
       <Tooltip
@@ -502,6 +452,11 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
                 {(displayCourse.WaitCap > 0 || displayCourse.WaitAct > 0) && (
                   <Typography variant="body2">
                     Waitlist: {displayCourse.WaitAct}/{displayCourse.WaitCap} ({displayCourse.WaitRem} open)
+                  </Typography>
+                )}
+                {isConflicted && (
+                  <Typography variant="body2" sx={{ mt: 0.5, fontWeight: 'bold', color: '#fbbf24' }}>
+                    Conflicts with My Schedule
                   </Typography>
                 )}
               </>
@@ -594,8 +549,10 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
             zIndex: isOverlapping ? (overlappingGroup.currentIndex === overlappingGroup.courses.findIndex(c => c.CRN === course.CRN) ? 4 : 3) : 2, // Selected course on top
             boxSizing: 'border-box',
             overflow: 'hidden',
-            outline: `2px solid ${course.__color}`,
+            outline: `2px solid ${isConflicted ? '#94a3b8' : course.__color}`,
             outlineOffset: '-2px',
+            filter: isConflicted ? 'grayscale(1)' : 'none',
+            opacity: isConflicted ? 0.55 : 1,
             '&:hover': {
               transform: 'translateY(-1px)',
               boxShadow: '0 6px 16px rgba(0,0,0,0.3)',
@@ -622,6 +579,24 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
               zIndex: 4,
               boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
             }} />
+          )}
+          {isConflicted && (
+            <Box sx={{
+              position: 'absolute',
+              top: '3px',
+              left: '3px',
+              zIndex: 4,
+              background: 'rgba(15, 23, 42, 0.75)',
+              color: '#e2e8f0',
+              fontSize: '8px',
+              fontWeight: 700,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+              padding: '1px 4px',
+              borderRadius: '3px',
+            }}>
+              Conflict
+            </Box>
           )}
           
           <Box sx={{ position: 'relative', height: '100%', display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -806,7 +781,7 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
                   height: 'auto',
                   padding: '2px 6px',
                   fontSize: '9px',
-                  background: isMySchedule ? '#dc3545' : '#059669',
+                  background: isMySchedule ? '#dc3545' : (isConflicted ? '#64748b' : '#059669'),
                   color: 'white',
                   border: 'none',
                   borderRadius: '4px',
@@ -814,7 +789,7 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
                   fontWeight: 600,
                   boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
                   '&:hover': {
-                    background: isMySchedule ? '#c82333' : '#048a5a',
+                    background: isMySchedule ? '#c82333' : (isConflicted ? '#475569' : '#048a5a'),
                     transform: 'translateY(-1px)',
                     boxShadow: '0 3px 6px rgba(0,0,0,0.3)',
                   }

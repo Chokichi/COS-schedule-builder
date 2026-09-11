@@ -136,6 +136,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
       campusAllow: new Set(),
       showFullClasses: false,
       showFullWaitlist: false,
+      showConflicts: false,
     });
   };
 
@@ -863,6 +864,35 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
             />
           }
           label="Show Full Waitlist Classes"
+          sx={{ 
+            '& .MuiFormControlLabel-label': {
+              fontSize: '14px',
+              fontWeight: 500,
+              color: 'text.primary'
+            }
+          }}
+        />
+      </Box>
+
+      <Box sx={{ mb: 2 }}>
+        <FormControlLabel
+          control={
+            <Switch
+              checked={filters.showConflicts}
+              onChange={(e) => {
+                onFilterChange({ showConflicts: e.target.checked });
+              }}
+              sx={{
+                '& .MuiSwitch-switchBase.Mui-checked': {
+                  color: '#059669',
+                  '& + .MuiSwitch-track': {
+                    backgroundColor: '#059669',
+                  },
+                },
+              }}
+            />
+          }
+          label="Show Conflicting Classes"
           sx={{ 
             '& .MuiFormControlLabel-label': {
               fontSize: '14px',

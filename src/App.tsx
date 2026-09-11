@@ -48,6 +48,13 @@ import ImportModal from './components/ImportModal';
 import SaveLoadModal from './components/SaveLoadModal';
 import CustomBlockModal from './components/CustomBlockModal';
 import { encodeCustomBlockForShare, decodeCustomBlockFromShare, formatFetchedAt, fetchScheduleMeta, fetchScheduleSnapshot, hydrateSnapshot, rematchSavedCourses, catalogIsStale, ScheduleSnapshot } from './utils/parser';
+import { occupiedMeetings, conflictingCrns, firstConflictName } from './utils/conflicts';
+
+declare global {
+  interface Window {
+    refreshCatalog?: () => Promise<void>;
+  }
+}
 
 const lightTheme = createTheme({
   palette: {
@@ -143,6 +150,7 @@ const initialFilterState: FilterState = {
   showOnline: false,
   showFullClasses: false,
   showFullWaitlist: false,
+  showConflicts: false,
 };
 
 const initialAppState: AppState = {
@@ -202,8 +210,25 @@ function emptyFilters(): FilterState {
     showOnline: false,
     showFullClasses: false,
     showFullWaitlist: false,
+    showConflicts: false,
   };
 }
+
+type LoadedLocalData = {
+  allCourses: Course[];
+  onlineCourses: Course[];
+  mySchedule: Course[];
+  myOnlineClasses: Course[];
+  subjects: Set<string>;
+  courses: Set<string>;
+  instructors: Set<string>;
+  campuses: Set<string>;
+  subjectData: Map<string, SubjectData>;
+  filters: FilterState;
+  customBlocks: CustomTimeBlock[];
+  isLightMode: boolean;
+  catalogFetchedAt: string | null;
+};
 
 function hasRestorableSession(data: {
   mySchedule?: unknown[];
@@ -272,6 +297,8 @@ function App() {
     
     if (hasFilterChips) {
       // Filter chips are selected - filter available courses based on current filters
+      const occupied = occupiedMeetings(appState.mySchedule, appState.customBlocks);
+      const conflictSet = conflictingCrns(appState.allCourses, occupied);
       const filteredAvailableCourses = appState.allCourses.filter(course => {
         const subjOk = appState.filters.subjectAllow.size === 0 || appState.filters.subjectAllow.has(course.Subject);
         const courseOk = appState.filters.courseAllow.size === 0 || appState.filters.courseAllow.has(course.Course);
@@ -282,8 +309,9 @@ function App() {
         const fullOk = appState.filters.showFullClasses || !isFull;
         const isWaitlistFull = course.WaitRem <= 0 && course.WaitCap > 0;
         const waitlistOk = appState.filters.showFullWaitlist || !isWaitlistFull;
+        const conflictOk = appState.filters.showConflicts || !conflictSet.has(course.CRN);
         
-        return subjOk && courseOk && instrOk && campusOk && fullOk && waitlistOk;
+        return subjOk && courseOk && instrOk && campusOk && fullOk && waitlistOk && conflictOk;
       });
       
       // Combine filtered available courses with student schedule
@@ -330,7 +358,7 @@ function App() {
         endMin: roundedEndMin
       };
     }
-  }, [appState.allCourses, appState.mySchedule, appState.filters]);
+  }, [appState.allCourses, appState.mySchedule, appState.customBlocks, appState.filters]);
 
   // Calculate total units for display
   const calculateTotalUnits = useCallback(() => {
@@ -375,6 +403,7 @@ function App() {
           showOnline: appState.filters.showOnline,
           showFullClasses: appState.filters.showFullClasses,
           showFullWaitlist: appState.filters.showFullWaitlist,
+          showConflicts: appState.filters.showConflicts,
         },
         customBlocks: appState.customBlocks,
         isLightMode,
@@ -401,7 +430,7 @@ function App() {
         console.log('🔍 Custom blocks length:', data.customBlocks?.length);
 
         if (data.allCourses && data.allCourses.length > 0) {
-          return {
+          const loaded: LoadedLocalData = {
             allCourses: data.allCourses,
             onlineCourses: data.onlineCourses || [],
             mySchedule: data.mySchedule || [],
@@ -429,11 +458,13 @@ function App() {
               showOnline: data.filters?.showOnline || false,
               showFullClasses: data.filters?.showFullClasses || false,
               showFullWaitlist: data.filters?.showFullWaitlist || false,
+              showConflicts: data.filters?.showConflicts || false,
             },
             customBlocks: data.customBlocks || [],
             isLightMode: data.isLightMode || false,
             catalogFetchedAt: data.catalogFetchedAt || null,
           };
+          return loaded;
         }
       }
     } catch (error) {
@@ -451,7 +482,7 @@ function App() {
     }
   }, []);
 
-  const persistCatalogOnly = useCallback((savedData: NonNullable<ReturnType<typeof loadFromLocalStorage>>) => {
+  const persistCatalogOnly = useCallback((savedData: LoadedLocalData) => {
     try {
       const dataToSave = {
         allCourses: savedData.allCourses,
@@ -479,6 +510,7 @@ function App() {
           showOnline: false,
           showFullClasses: false,
           showFullWaitlist: false,
+          showConflicts: false,
         },
         customBlocks: [],
         isLightMode: savedData.isLightMode,
@@ -539,6 +571,7 @@ function App() {
     myOnlineClasses?: Course[];
     customBlocks?: AppState['customBlocks'];
     openSubjectPicker?: boolean;
+    force?: boolean;
   } = {}) => {
     if (syncingCatalogRef.current) return;
     syncingCatalogRef.current = true;
@@ -547,12 +580,12 @@ function App() {
       isLoading: true,
       error: null,
       importProgress: 15,
-      importProgressText: 'Checking for schedule updates...',
+      importProgressText: options.force ? 'Refreshing course catalog...' : 'Checking for schedule updates...',
     }));
     try {
       const localFetchedAt = options.localFetchedAt ?? null;
       const hasLocalCatalog = options.hasLocalCatalog ?? false;
-      const meta = await fetchScheduleMeta();
+      const meta = await fetchScheduleMeta(options.force);
 
       if (meta) {
         setCatalogMeta({
@@ -565,7 +598,8 @@ function App() {
       const remoteFetchedAt = meta?.fetchedAt;
       // Only download the full snapshot when we have no local catalog, or the
       // tiny /api/schedule/meta timestamp is newer than what we already have.
-      const needFull = !hasLocalCatalog
+      const needFull = Boolean(options.force)
+        || !hasLocalCatalog
         || (Boolean(remoteFetchedAt) && catalogIsStale(localFetchedAt, remoteFetchedAt));
 
       if (!needFull) {
@@ -586,8 +620,8 @@ function App() {
         importProgress: 45,
         importProgressText: 'Loading course catalog...',
       }));
-      const snapshot = await fetchScheduleSnapshot();
-      if (hasLocalCatalog && !catalogIsStale(localFetchedAt, snapshot.fetchedAt)) {
+      const snapshot = await fetchScheduleSnapshot(options.force);
+      if (!options.force && hasLocalCatalog && !catalogIsStale(localFetchedAt, snapshot.fetchedAt)) {
         setCatalogMeta({
           year: snapshot.year,
           term: snapshot.term,
@@ -740,6 +774,29 @@ function App() {
       customBlocks: appState.customBlocks,
     });
   }, [syncCatalog, appState.catalogFetchedAt, appState.allCourses.length, appState.mySchedule, appState.myOnlineClasses, appState.customBlocks]);
+
+  const refreshCatalogFromConsole = useCallback(async () => {
+    syncingCatalogRef.current = false;
+    console.info('Refreshing course catalog…');
+    await syncCatalog({
+      localFetchedAt: appState.catalogFetchedAt,
+      hasLocalCatalog: appState.allCourses.length > 0,
+      mySchedule: appState.mySchedule,
+      myOnlineClasses: appState.myOnlineClasses,
+      customBlocks: appState.customBlocks,
+      force: true,
+    });
+    console.info('Course catalog refresh finished.');
+  }, [syncCatalog, appState.catalogFetchedAt, appState.allCourses.length, appState.mySchedule, appState.myOnlineClasses, appState.customBlocks]);
+
+  useEffect(() => {
+    window.refreshCatalog = refreshCatalogFromConsole;
+    return () => {
+      if (window.refreshCatalog === refreshCatalogFromConsole) {
+        delete window.refreshCatalog;
+      }
+    };
+  }, [refreshCatalogFromConsole]);
 
   const handleSaveLoadSchedule = useCallback((event: React.MouseEvent<HTMLElement>) => {
     setSaveLoadMenuAnchor(event.currentTarget);
@@ -1068,22 +1125,14 @@ function App() {
       if (!course || prev.mySchedule.find(c => c.CRN === crn)) {
         return prev;
       }
-      
-      // Check for time conflicts
+
       const coursesWithSameCRN = prev.allCourses.filter(c => c.CRN === crn);
-      for (const crs of coursesWithSameCRN) {
-        for (const existing of prev.mySchedule) {
-          const daysOverlap = Array.from(crs.Days).some(d => existing.Days.includes(d));
-          if (daysOverlap) {
-            const newStart = crs.StartMin, newEnd = crs.EndMin;
-            const existStart = existing.StartMin, existEnd = existing.EndMin;
-            if (newStart < existEnd && newEnd > existStart) {
-              // eslint-disable-next-line no-restricted-globals
-              if (!confirm(`Time conflict with ${existing.Subject} ${existing.Course}. Add anyway?`)) {
-                return prev;
-              }
-            }
-          }
+      const occupied = occupiedMeetings(prev.mySchedule, prev.customBlocks);
+      const conflictName = firstConflictName(coursesWithSameCRN, occupied);
+      if (conflictName) {
+        // eslint-disable-next-line no-restricted-globals
+        if (!confirm(`Time conflict with ${conflictName}. Add anyway?`)) {
+          return prev;
         }
       }
       

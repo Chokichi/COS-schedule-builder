@@ -100,6 +100,12 @@ export function rematchSavedCourses(saved: Course[], catalog: Course[]): Course[
   return result;
 }
 
+function withCacheBust(url: string, bust: boolean): string {
+  if (!bust) return url;
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}t=${Date.now()}`;
+}
+
 async function fetchJson(url: string): Promise<any | null> {
   try {
     const response = await fetch(url);
@@ -111,8 +117,8 @@ async function fetchJson(url: string): Promise<any | null> {
   }
 }
 
-export async function fetchScheduleMeta(): Promise<ScheduleMeta | null> {
-  const meta = await fetchJson('/api/schedule/meta');
+export async function fetchScheduleMeta(cacheBust = false): Promise<ScheduleMeta | null> {
+  const meta = await fetchJson(withCacheBust('/api/schedule/meta', cacheBust));
   if (meta && typeof meta.fetchedAt === 'string') {
     return {
       fetchedAt: meta.fetchedAt,
@@ -124,9 +130,9 @@ export async function fetchScheduleMeta(): Promise<ScheduleMeta | null> {
   return null;
 }
 
-export async function fetchScheduleSnapshot(): Promise<ScheduleSnapshot> {
-  const remote = await fetchJson('/api/schedule');
-  const local = remote || await fetchJson('/schedule-snapshot.json');
+export async function fetchScheduleSnapshot(cacheBust = false): Promise<ScheduleSnapshot> {
+  const remote = await fetchJson(withCacheBust('/api/schedule', cacheBust));
+  const local = remote || await fetchJson(withCacheBust('/schedule-snapshot.json', cacheBust));
   if (!local || !Array.isArray(local.courses)) {
     throw new Error('Could not load the course schedule. Please refresh and try again.');
   }

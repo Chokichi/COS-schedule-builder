@@ -56,6 +56,7 @@ export interface FilterState {
   showOnline: boolean;
   showFullClasses: boolean;
   showFullWaitlist: boolean;
+  showConflicts: boolean;
 }
 
 export interface SubjectData {
