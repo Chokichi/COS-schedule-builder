@@ -14,6 +14,20 @@ function timeToMinutes(t) {
   return hh * 60 + mm;
 }
 
+/**
+ * Banner lab/continuation rows often omit the opening <tr>:
+ *   </tr><td colspan="3">...</td></tr>
+ * linkedom will not invent that row the way a browser does.
+ */
+function normalizeScheduleHtml(html) {
+  return String(html).replace(/<\/tr>\s*(<td\b)/gi, '</tr>\n<tr>$1');
+}
+
+function cellColspan(el) {
+  const raw = el.getAttribute('colspan') || el.getAttribute('COLSPAN') || '';
+  return String(raw).trim();
+}
+
 function compactCourse(row) {
   return {
     Subject: row.Subject,
@@ -109,7 +123,7 @@ function parseScheduleTable(document) {
     if (cells.length < 10) continue;
 
     const firstCell = cells[0];
-    const isContinuation = firstCell && firstCell.getAttribute('colspan') === '3' && !row.querySelector('a[href*="p_course_popup"]');
+    const isContinuation = firstCell && cellColspan(firstCell) === '3' && !row.querySelector('a[href*="p_course_popup"]');
 
     let crn;
     let instructor;
@@ -202,4 +216,4 @@ function parseScheduleTable(document) {
   return { courses, online };
 }
 
-module.exports = { parseScheduleTable, timeToMinutes };
+module.exports = { parseScheduleTable, timeToMinutes, normalizeScheduleHtml };

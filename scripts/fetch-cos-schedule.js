@@ -12,7 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { parseHTML } = require('linkedom');
-const { parseScheduleTable } = require('./parse-schedule-table');
+const { parseScheduleTable, normalizeScheduleHtml } = require('./parse-schedule-table');
 
 const SEARCH_URL = 'https://banweb.cos.edu/prod/hzsched.p_search';
 const USER_AGENT =
@@ -391,7 +391,7 @@ async function main() {
     fail('Did not receive a complete schedule table from COS');
   }
 
-  const { document } = parseHTML(table);
+  const { document } = parseHTML(normalizeScheduleHtml(table));
   const parsed = parseScheduleTable(document);
   const { year, term } = parseTermDesc(form.termDesc);
   const fetchedAt = new Date().toISOString();

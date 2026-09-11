@@ -10,6 +10,11 @@ export function timeToMinutes(t: string): number | null {
   return hh * 60 + mm;
 }
 
+/** Banner lab rows often omit the opening <tr> after </tr>. */
+export function normalizeScheduleHtml(html: string): string {
+  return html.replace(/<\/tr>\s*(<td\b)/gi, '</tr>\n<tr>$1');
+}
+
 export function parseDays(dstr: string): Set<string> {
   const set = new Set<string>();
   if (!dstr) return set;
@@ -148,7 +153,7 @@ export function parseHtmlTable(html: string): { courses: Course[]; online: Cours
   console.log('=== parseHtmlTable START ===');
   
   const parser = new DOMParser();
-  const doc = parser.parseFromString(html, 'text/html');
+  const doc = parser.parseFromString(normalizeScheduleHtml(html), 'text/html');
   const table = doc.querySelector('table.dataentrytable');
   
   if (!table) {
@@ -200,7 +205,7 @@ export function parseHtmlTable(html: string): { courses: Course[]; online: Cours
 
     // Check if this is a continuation row (no CRN, has colspan="3" in first cell)
     const firstCell = cells[0];
-    const isContinuation = firstCell && firstCell.getAttribute('colspan') === '3' && !row.querySelector('a[href*="p_course_popup"]');
+    const isContinuation = firstCell && (firstCell.getAttribute('colspan') || firstCell.getAttribute('COLSPAN')) === '3' && !row.querySelector('a[href*="p_course_popup"]');
 
     let crn, instructor, color, bg;
     let dayStartIndex = 3; // Default day column start index
