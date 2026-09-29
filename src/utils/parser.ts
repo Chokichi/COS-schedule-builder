@@ -46,7 +46,7 @@ export function formatFetchedAt(iso?: string | null): string | null {
   });
 }
 
-export type CompactCourse = Omit<Course, '__color' | '__bg' | 'isCustomBlock' | 'customCrn' | 'customField'>;
+export type CompactCourse = Omit<Course, '__color' | '__bg' | 'isCustomBlock' | 'customCrn' | 'customField' | 'unavailable'>;
 
 export interface ScheduleMeta {
   fetchedAt: string;
@@ -76,6 +76,18 @@ export function hydrateSnapshot(snapshot: ScheduleSnapshot): { courses: Course[]
   };
 }
 
+function sameSection(a: Course, b: Course): boolean {
+  return a.CRN === b.CRN && a.Subject === b.Subject && a.Course === b.Course;
+}
+
+export function markUnavailable(courses: Course[]): Course[] {
+  return courses.map((course) => (course.isCustomBlock ? course : { ...course, unavailable: true }));
+}
+
+/**
+ * Re-link saved My Schedule rows to the fresh catalog. Rows whose section is gone
+ * are kept (flagged `unavailable`) so a catalog refresh never deletes a student's picks.
+ */
 export function rematchSavedCourses(saved: Course[], catalog: Course[]): Course[] {
   const remaining = [...catalog];
   const result: Course[] = [];
@@ -85,19 +97,47 @@ export function rematchSavedCourses(saved: Course[], catalog: Course[]): Course[
       continue;
     }
     let idx = remaining.findIndex((candidate) =>
-      candidate.CRN === course.CRN &&
+      sameSection(candidate, course) &&
       candidate.Days === course.Days &&
       candidate.StartMin === course.StartMin &&
       candidate.EndMin === course.EndMin
     );
     if (idx < 0) {
-      idx = remaining.findIndex((candidate) => candidate.CRN === course.CRN);
+      idx = remaining.findIndex((candidate) => sameSection(candidate, course));
     }
     if (idx >= 0) {
       result.push(remaining.splice(idx, 1)[0]);
+    } else {
+      result.push({ ...course, unavailable: true });
     }
   }
   return result;
+}
+
+export function countNewlyUnavailable(before: Course[], after: Course[]): number {
+  const wasAvailable = new Set(before.filter((c) => !c.unavailable && !c.isCustomBlock).map((c) => c.CRN));
+  return new Set(after.filter((c) => c.unavailable && wasAvailable.has(c.CRN)).map((c) => c.CRN)).size;
+}
+
+/**
+ * True when the incoming snapshot is a different semester than the local catalog.
+ * Older saves have no term code, so fall back to comparing the catalogs' sections.
+ */
+export function isTermChange(
+  localTermCode: string | null | undefined,
+  localCourses: Course[] | undefined,
+  snapshotTermCode: string | undefined,
+  snapshotCourses: Course[],
+): boolean {
+  if (localTermCode && snapshotTermCode) return localTermCode !== snapshotTermCode;
+  if (!localCourses || localCourses.length === 0) return false;
+  const incoming = new Set(snapshotCourses.map((c) => `${c.CRN}|${c.Subject}|${c.Course}`));
+  const localKeys = new Set(localCourses.map((c) => `${c.CRN}|${c.Subject}|${c.Course}`));
+  let shared = 0;
+  localKeys.forEach((key) => {
+    if (incoming.has(key)) shared += 1;
+  });
+  return shared / localKeys.size < 0.5;
 }
 
 function withCacheBust(url: string, bust: boolean): string {

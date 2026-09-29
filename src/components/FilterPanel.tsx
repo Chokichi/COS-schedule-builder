@@ -24,6 +24,7 @@ import {
   Search,
 } from '@mui/icons-material';
 import { FilterState, Course, SubjectData } from '../types';
+import { catalogClassKey, filtersFromNeededCourses } from '../utils/catalogClasses';
 
 interface FilterPanelProps {
   filters: FilterState;
@@ -137,6 +138,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
       showFullClasses: false,
       showFullWaitlist: false,
       showConflicts: false,
+      neededCourses: new Set(),
     });
   };
 
@@ -270,32 +272,24 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
     if (type === 'subject') {
       handleChipClick('subjectAllow', value);
     } else if (type === 'course') {
-      // Parse "SUBJ 001" format
-      const match = value.match(/^([A-Z]+)\s+(.+)$/);
-      if (match) {
-        const [, subject, courseNum] = match;
-        // First add the subject if not already added
-        if (!filters.subjectAllow.has(subject)) {
-          handleChipClick('subjectAllow', subject);
-        }
-        // Then add the course number
-        setTimeout(() => {
-          handleChipClick('courseAllow', courseNum);
-        }, 100);
-      }
+      const next = new Set(filters.neededCourses);
+      next.add(value);
+      onFilterChange(filtersFromNeededCourses(next));
+      setSearchQuery('');
+      setShowSearchResults(false);
+      return;
     } else if (type === 'instructor') {
       handleChipClick('instructorAllow', value);
     } else if (type === 'crn') {
-      // For CRN, we need to find the course and add its subject/course
       const course = allCourses.find(c => c.CRN === value);
       if (course) {
-        if (!filters.subjectAllow.has(course.Subject)) {
-          handleChipClick('subjectAllow', course.Subject);
-        }
-        setTimeout(() => {
-          handleChipClick('courseAllow', course.Course);
-        }, 100);
+        const next = new Set(filters.neededCourses);
+        next.add(catalogClassKey(course.Subject, course.Course));
+        onFilterChange(filtersFromNeededCourses(next));
       }
+      setSearchQuery('');
+      setShowSearchResults(false);
+      return;
     }
     setSearchQuery('');
     setShowSearchResults(false);
@@ -501,6 +495,40 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
         )}
       </Box>
 
+      {filters.neededCourses.size > 0 && (
+        <Box sx={{ mb: 2 }}>
+          <Typography variant="caption" sx={{
+            fontWeight: 600,
+            color: 'text.secondary',
+            textTransform: 'uppercase',
+            display: 'block',
+            mb: 1,
+          }}>
+            Classes on calendar
+          </Typography>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+            {Array.from(filters.neededCourses).sort().map(key => (
+              <Chip
+                key={key}
+                label={key}
+                size="small"
+                onDelete={() => {
+                  const next = new Set(filters.neededCourses);
+                  next.delete(key);
+                  onFilterChange(filtersFromNeededCourses(next));
+                }}
+                sx={{
+                  background: 'linear-gradient(135deg, #2563eb, #059669)',
+                  color: 'white',
+                  fontWeight: 600,
+                  '& .MuiChip-deleteIcon': { color: 'rgba(255,255,255,0.85)' },
+                }}
+              />
+            ))}
+          </Box>
+        </Box>
+      )}
+
       <Typography variant="h6" sx={{
         fontSize: '14px',
         margin: '0 0 10px 0',
@@ -555,19 +583,6 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
         >
           <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span>{expandedSections.subjects ? '▼' : '▶'} Subject Filters</span>
-            <Chip
-              label="Required"
-              size="small"
-              sx={{
-                height: '20px',
-                fontSize: '10px',
-                backgroundColor: 'primary.main',
-                color: 'white',
-                '& .MuiChip-label': {
-                  padding: '0 6px',
-                }
-              }}
-            />
           </Box>
         </Button>
         

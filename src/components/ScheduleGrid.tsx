@@ -8,6 +8,7 @@ import {
 } from '@mui/material';
 import { Course, FilterState, CustomTimeBlock, DAYS, DAY_LABELS, PX_PER_HOUR, DAY_START_MIN, DAY_END_MIN } from '../types';
 import { customBlocksToCourses, conflictingCrns } from '../utils/conflicts';
+import { matchesNeededOrSubjectFilters } from '../utils/catalogClasses';
 
 const TIME_COL_WIDTH = 60;
 const VISIBLE_DAYS = 2;
@@ -117,10 +118,9 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
     // First, find all lecture sections that pass the filter
     const lectureSections = courses.filter(course => {
       if (course.isLabSection) return false; // Skip lab sections for now
-      if (mySchedule.find(m => m.CRN === course.CRN)) return false; // Don't show courses already in my schedule
+      if (mySchedule.find(m => m.CRN === course.CRN && !m.unavailable)) return false; // Don't show courses already in my schedule
       
-      const subjOk = filters.subjectAllow.size === 0 || filters.subjectAllow.has(course.Subject);
-      const courseOk = filters.courseAllow.size === 0 || filters.courseAllow.has(course.Course);
+      const classOk = matchesNeededOrSubjectFilters(course, filters);
       const instrOk = filters.instructorAllow.size === 0 || filters.instructorAllow.has(course.Instructor);
       const campusOk = filters.campusAllow.size === 0 || filters.campusAllow.has(course.Campus);
       
@@ -133,7 +133,7 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
       const waitlistOk = filters.showFullWaitlist || !isWaitlistFull;
       const conflictOk = filters.showConflicts || !conflictCrnSet.has(course.CRN);
       
-      return subjOk && courseOk && instrOk && campusOk && fullOk && waitlistOk && conflictOk;
+      return classOk && instrOk && campusOk && fullOk && waitlistOk && conflictOk;
     });
     
     // Get CRNs of lecture sections that passed the filter
@@ -144,7 +144,7 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
     // Now filter all courses (including lab sections) based on whether their CRN is allowed
     const filtered = courses.filter(course => {
       // Don't show courses already in my schedule
-      if (mySchedule.find(m => m.CRN === course.CRN)) return false;
+      if (mySchedule.find(m => m.CRN === course.CRN && !m.unavailable)) return false;
       
       // If this is a lab section, check if its lecture section passed the filter
       if (course.isLabSection) {
@@ -152,8 +152,7 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
       }
       
       // For lecture sections, use the original filtering logic
-      const subjOk = filters.subjectAllow.size === 0 || filters.subjectAllow.has(course.Subject);
-      const courseOk = filters.courseAllow.size === 0 || filters.courseAllow.has(course.Course);
+      const classOk = matchesNeededOrSubjectFilters(course, filters);
       const instrOk = filters.instructorAllow.size === 0 || filters.instructorAllow.has(course.Instructor);
       
       // Campus filtering: if no campus filters are selected, show all; otherwise check if course campus is in the selected set
@@ -179,7 +178,7 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
 
       const conflictOk = filters.showConflicts || !conflictCrnSet.has(course.CRN);
       
-      return subjOk && courseOk && instrOk && campusOk && fullOk && waitlistOk && conflictOk;
+      return classOk && instrOk && campusOk && fullOk && waitlistOk && conflictOk;
     });
     
     console.log(`Final result: ${filtered.length} courses after filtering`);
@@ -549,10 +548,12 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
             zIndex: isOverlapping ? (overlappingGroup.currentIndex === overlappingGroup.courses.findIndex(c => c.CRN === course.CRN) ? 4 : 3) : 2, // Selected course on top
             boxSizing: 'border-box',
             overflow: 'hidden',
-            outline: `2px solid ${isConflicted ? '#94a3b8' : course.__color}`,
+            outline: course.unavailable
+              ? '2px dashed #94a3b8'
+              : `2px solid ${isConflicted ? '#94a3b8' : course.__color}`,
             outlineOffset: '-2px',
-            filter: isConflicted ? 'grayscale(1)' : 'none',
-            opacity: isConflicted ? 0.55 : 1,
+            filter: isConflicted || course.unavailable ? 'grayscale(1)' : 'none',
+            opacity: isConflicted ? 0.55 : course.unavailable ? 0.7 : 1,
             '&:hover': {
               transform: 'translateY(-1px)',
               boxShadow: '0 6px 16px rgba(0,0,0,0.3)',
@@ -651,6 +652,22 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
                   }}
                 >
                   {course.isCustomBlock ? course.customCrn : course.CRN}
+                </Box>
+              )}
+              {course.unavailable && (
+                <Box
+                  sx={{
+                    display: 'inline-block',
+                    fontSize: '8px',
+                    fontWeight: 700,
+                    padding: '1px 4px',
+                    borderRadius: '6px',
+                    background: 'rgba(15, 23, 42, 0.75)',
+                    color: '#e2e8f0',
+                    alignSelf: 'flex-start',
+                  }}
+                >
+                  No longer listed
                 </Box>
               )}
             </Box>
@@ -876,9 +893,11 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
   };
 
   // Check if no subjects are selected (only for available courses, not my schedule)
-  const noSubjectsSelected = !isMySchedule && filters.subjectAllow.size === 0;
+  const noClassesSelected = !isMySchedule
+    && filters.neededCourses.size === 0
+    && filters.subjectAllow.size === 0;
 
-  if (noSubjectsSelected) {
+  if (noClassesSelected) {
     return (
       <Box
         sx={{
@@ -911,7 +930,7 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
             color: 'text.primary',
             fontSize: '16px',
           }}>
-            Select Subjects to View Courses
+            Choose Classes to View Sections
           </Typography>
           <Typography variant="body2" sx={{ 
             mb: 2,
@@ -919,7 +938,7 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
             lineHeight: 1.5,
             fontSize: '13px',
           }}>
-            Choose one or more subjects from the filter panel to see available courses and build your schedule.
+            Tell us which classes you need. We’ll show every available section on the calendar so you can build a schedule that fits.
           </Typography>
           <Box sx={{
             display: 'flex',
@@ -945,7 +964,7 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
                 borderRadius: '50%', 
                 backgroundColor: 'primary.main' 
               }} />
-              Click on subject chips to filter courses
+              Click Choose Classes to add MATH 010, CHEM 012, and the rest of your list
             </Typography>
             <Typography 
               variant="body2" 
@@ -964,7 +983,7 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = ({
                 borderRadius: '50%', 
                 backgroundColor: 'secondary.main' 
               }} />
-              Use course and instructor filters to narrow down options
+              Search for a class, then add the section times that work
             </Typography>
             <Typography 
               variant="body2" 

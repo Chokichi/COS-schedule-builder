@@ -8,6 +8,7 @@ import {
   Chip,
 } from '@mui/material';
 import { Course, FilterState } from '../types';
+import { matchesNeededOrSubjectFilters } from '../utils/catalogClasses';
 
 interface OnlineCoursesListProps {
   courses: Course[];
@@ -26,12 +27,11 @@ const OnlineCoursesList: React.FC<OnlineCoursesListProps> = ({
 }) => {
   const filteredCourses = useMemo(() => {
     return courses.filter(course => {
-      const subjOk = filters.subjectAllow.size === 0 || filters.subjectAllow.has(course.Subject);
-      const courseOk = filters.courseAllow.size === 0 || filters.courseAllow.has(course.Course);
+      const classOk = matchesNeededOrSubjectFilters(course, filters);
       const instrOk = filters.instructorAllow.size === 0 || filters.instructorAllow.has(course.Instructor);
       const campusOk = filters.campusAllow.size === 0 || filters.campusAllow.has(course.Campus);
       
-      return subjOk && courseOk && instrOk && campusOk;
+      return classOk && instrOk && campusOk;
     });
   }, [courses, filters]);
 
@@ -51,7 +51,7 @@ const OnlineCoursesList: React.FC<OnlineCoursesListProps> = ({
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
       {filteredCourses.map(course => {
-        const isAlreadySelected = myOnlineClasses.some(c => c.CRN === course.CRN);
+        const isAlreadySelected = course.unavailable || myOnlineClasses.some(c => c.CRN === course.CRN && !c.unavailable);
         
         return (
           <Card
@@ -86,6 +86,14 @@ const OnlineCoursesList: React.FC<OnlineCoursesListProps> = ({
                     {course.Title}
                   </Typography>
                   <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 1 }}>
+                    {course.unavailable && (
+                      <Chip
+                        label="No longer listed"
+                        size="small"
+                        color="warning"
+                        sx={{ fontSize: '11px', height: '20px' }}
+                      />
+                    )}
                     <Chip
                       label={`CRN: ${course.CRN}`}
                       size="small"

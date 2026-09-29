@@ -22,6 +22,9 @@ import {
   TextField,
   Divider,
   useMediaQuery,
+  Snackbar,
+  Alert,
+  ListSubheader,
 } from '@mui/material';
 import {
   ViewColumn,
@@ -47,8 +50,9 @@ import OnlineCoursesList from './components/OnlineCoursesList';
 import ImportModal from './components/ImportModal';
 import SaveLoadModal from './components/SaveLoadModal';
 import CustomBlockModal from './components/CustomBlockModal';
-import { encodeCustomBlockForShare, decodeCustomBlockFromShare, formatFetchedAt, fetchScheduleMeta, fetchScheduleSnapshot, hydrateSnapshot, rematchSavedCourses, catalogIsStale, ScheduleSnapshot } from './utils/parser';
+import { encodeCustomBlockForShare, decodeCustomBlockFromShare, formatFetchedAt, fetchScheduleMeta, fetchScheduleSnapshot, hydrateSnapshot, rematchSavedCourses, markUnavailable, countNewlyUnavailable, isTermChange, catalogIsStale, ScheduleSnapshot } from './utils/parser';
 import { occupiedMeetings, conflictingCrns, firstConflictName } from './utils/conflicts';
+import { filtersFromNeededCourses, matchesNeededOrSubjectFilters } from './utils/catalogClasses';
 
 declare global {
   interface Window {
@@ -151,6 +155,7 @@ const initialFilterState: FilterState = {
   showFullClasses: false,
   showFullWaitlist: false,
   showConflicts: false,
+  neededCourses: new Set(),
 };
 
 const initialAppState: AppState = {
@@ -170,7 +175,11 @@ const initialAppState: AppState = {
   importProgress: 0,
   importProgressText: '',
   catalogFetchedAt: null,
+  catalogTermCode: null,
+  catalogTermLabel: null,
 };
+
+const LEGACY_TERM_LABEL = `${scheduleConfig.term} ${scheduleConfig.year}`;
 
 function buildCatalogFields(courses: Course[], online: Course[]) {
   const subjectData = new Map<string, SubjectData>();
@@ -211,6 +220,7 @@ function emptyFilters(): FilterState {
     showFullClasses: false,
     showFullWaitlist: false,
     showConflicts: false,
+    neededCourses: new Set(),
   };
 }
 
@@ -228,18 +238,30 @@ type LoadedLocalData = {
   customBlocks: CustomTimeBlock[];
   isLightMode: boolean;
   catalogFetchedAt: string | null;
+  catalogTermCode: string | null;
+  catalogTermLabel: string | null;
+};
+
+type CatalogSyncOptions = {
+  mySchedule?: Course[];
+  myOnlineClasses?: Course[];
+  customBlocks?: CustomTimeBlock[];
+  localTermCode?: string | null;
+  localTermLabel?: string | null;
+  localCourses?: Course[];
 };
 
 function hasRestorableSession(data: {
   mySchedule?: unknown[];
   myOnlineClasses?: unknown[];
   customBlocks?: unknown[];
-  filters?: { subjectAllow?: Set<string> };
+  filters?: { subjectAllow?: Set<string>; neededCourses?: Set<string> };
 }): boolean {
   return (data.mySchedule?.length || 0) > 0
     || (data.myOnlineClasses?.length || 0) > 0
     || (data.customBlocks?.length || 0) > 0
-    || (data.filters?.subjectAllow?.size || 0) > 0;
+    || (data.filters?.subjectAllow?.size || 0) > 0
+    || (data.filters?.neededCourses?.size || 0) > 0;
 }
 
 function App() {
@@ -258,6 +280,7 @@ function App() {
   );
   const [layoutMenuAnchor, setLayoutMenuAnchor] = useState<{ available: HTMLElement | null; mySchedule: HTMLElement | null }>({ available: null, mySchedule: null });
   const [savedSchedules, setSavedSchedules] = useState<SavedSchedule[]>([]);
+  const [catalogNotice, setCatalogNotice] = useState<string | null>(null);
   const [selectedScheduleId, setSelectedScheduleId] = useState<string | ''>('');
   const [saveLoadMenuAnchor, setSaveLoadMenuAnchor] = useState<HTMLElement | null>(null);
   const [saveScheduleModalOpen, setSaveScheduleModalOpen] = useState(false);
@@ -288,7 +311,8 @@ function App() {
   // Calculate shared time range for both schedules based on filtered courses
   const sharedTimeRange = useMemo(() => {
     // Check if any filter chips are selected (not including showFullClasses/showFullWaitlist)
-    const hasFilterChips = appState.filters.subjectAllow.size > 0 || 
+    const hasFilterChips = appState.filters.neededCourses.size > 0 ||
+                          appState.filters.subjectAllow.size > 0 || 
                           appState.filters.courseAllow.size > 0 || 
                           appState.filters.instructorAllow.size > 0 || 
                           appState.filters.campusAllow.size > 0;
@@ -300,8 +324,7 @@ function App() {
       const occupied = occupiedMeetings(appState.mySchedule, appState.customBlocks);
       const conflictSet = conflictingCrns(appState.allCourses, occupied);
       const filteredAvailableCourses = appState.allCourses.filter(course => {
-        const subjOk = appState.filters.subjectAllow.size === 0 || appState.filters.subjectAllow.has(course.Subject);
-        const courseOk = appState.filters.courseAllow.size === 0 || appState.filters.courseAllow.has(course.Course);
+        const subjOk = matchesNeededOrSubjectFilters(course, appState.filters);
         const instrOk = appState.filters.instructorAllow.size === 0 || appState.filters.instructorAllow.has(course.Instructor);
         const campusOk = appState.filters.campusAllow.size === 0 || appState.filters.campusAllow.has(course.Campus);
         
@@ -311,7 +334,7 @@ function App() {
         const waitlistOk = appState.filters.showFullWaitlist || !isWaitlistFull;
         const conflictOk = appState.filters.showConflicts || !conflictSet.has(course.CRN);
         
-        return subjOk && courseOk && instrOk && campusOk && fullOk && waitlistOk && conflictOk;
+        return subjOk && instrOk && campusOk && fullOk && waitlistOk && conflictOk;
       });
       
       // Combine filtered available courses with student schedule
@@ -364,10 +387,10 @@ function App() {
   const calculateTotalUnits = useCallback(() => {
     let totalUnits = 0;
     appState.mySchedule.forEach(course => {
-      if (course.Units > 0) totalUnits += course.Units;
+      if (course.Units > 0 && !course.unavailable) totalUnits += course.Units;
     });
     appState.myOnlineClasses.forEach(course => {
-      if (course.Units > 0) totalUnits += course.Units;
+      if (course.Units > 0 && !course.unavailable) totalUnits += course.Units;
     });
     return totalUnits;
   }, [appState.mySchedule, appState.myOnlineClasses]);
@@ -404,10 +427,13 @@ function App() {
           showFullClasses: appState.filters.showFullClasses,
           showFullWaitlist: appState.filters.showFullWaitlist,
           showConflicts: appState.filters.showConflicts,
+          neededCourses: Array.from(appState.filters.neededCourses),
         },
         customBlocks: appState.customBlocks,
         isLightMode,
         catalogFetchedAt: appState.catalogFetchedAt,
+        catalogTermCode: appState.catalogTermCode,
+        catalogTermLabel: appState.catalogTermLabel,
         timestamp: Date.now(),
       };
       localStorage.setItem('ssb_data', JSON.stringify(dataToSave));
@@ -459,10 +485,13 @@ function App() {
               showFullClasses: data.filters?.showFullClasses || false,
               showFullWaitlist: data.filters?.showFullWaitlist || false,
               showConflicts: data.filters?.showConflicts || false,
+              neededCourses: new Set<string>(data.filters?.neededCourses || []),
             },
             customBlocks: data.customBlocks || [],
             isLightMode: data.isLightMode || false,
             catalogFetchedAt: data.catalogFetchedAt || null,
+            catalogTermCode: data.catalogTermCode || null,
+            catalogTermLabel: data.catalogTermLabel || null,
           };
           return loaded;
         }
@@ -511,10 +540,13 @@ function App() {
           showFullClasses: false,
           showFullWaitlist: false,
           showConflicts: false,
+          neededCourses: [],
         },
         customBlocks: [],
         isLightMode: savedData.isLightMode,
         catalogFetchedAt: savedData.catalogFetchedAt,
+        catalogTermCode: savedData.catalogTermCode,
+        catalogTermLabel: savedData.catalogTermLabel,
         timestamp: Date.now(),
       };
       localStorage.setItem('ssb_data', JSON.stringify(dataToSave));
@@ -531,13 +563,47 @@ function App() {
     }
   }, [appState, saveToLocalStorage]);
 
-  const applySnapshot = useCallback((snapshot: ScheduleSnapshot, options: {
-    mySchedule?: Course[];
-    myOnlineClasses?: Course[];
-    customBlocks?: AppState['customBlocks'];
-  } = {}) => {
+  const applySnapshot = useCallback((snapshot: ScheduleSnapshot, options: CatalogSyncOptions = {}) => {
     const { courses, online } = hydrateSnapshot(snapshot);
     const catalogFields = buildCatalogFields(courses, online);
+    const newTermLabel = `${snapshot.term} ${snapshot.year}`;
+    const savedClasses = options.mySchedule ?? [];
+    const savedOnline = options.myOnlineClasses ?? [];
+    const termChanged = isTermChange(options.localTermCode, options.localCourses, snapshot.termCode, courses);
+
+    let mySchedule: Course[];
+    let myOnlineClasses: Course[];
+    if (termChanged) {
+      // CRNs are reused between semesters, so old picks are archived instead of re-matched.
+      if ([...savedClasses, ...savedOnline].some(course => !course.isCustomBlock)) {
+        const fallbackLabel = LEGACY_TERM_LABEL === newTermLabel ? 'Previous semester' : LEGACY_TERM_LABEL;
+        const oldTermLabel = options.localTermLabel || fallbackLabel;
+        const archiveName = `${oldTermLabel} schedule`;
+        const now = Date.now();
+        setSavedSchedules(prev => [...prev, {
+          id: `schedule_${now}`,
+          name: archiveName,
+          mySchedule: markUnavailable(savedClasses),
+          myOnlineClasses: markUnavailable(savedOnline),
+          customBlocks: options.customBlocks ?? [],
+          termCode: options.localTermCode || undefined,
+          termLabel: oldTermLabel,
+          createdAt: now,
+          updatedAt: now,
+        }]);
+        setCatalogNotice(`The ${newTermLabel} schedule is here. Your ${oldTermLabel} classes were saved as "${archiveName}" in your saved schedules.`);
+      }
+      mySchedule = [];
+      myOnlineClasses = [];
+    } else {
+      mySchedule = rematchSavedCourses(savedClasses, courses);
+      myOnlineClasses = rematchSavedCourses(savedOnline, online);
+      const lost = countNewlyUnavailable(savedClasses, mySchedule) + countNewlyUnavailable(savedOnline, myOnlineClasses);
+      if (lost > 0) {
+        setCatalogNotice(`${lost} ${lost === 1 ? 'class' : 'classes'} in My Schedule ${lost === 1 ? 'is' : 'are'} no longer listed by COS. ${lost === 1 ? "It's" : "They're"} still shown as "No longer listed" so you can pick a replacement.`);
+      }
+    }
+
     setCatalogMeta({
       year: snapshot.year,
       term: snapshot.term,
@@ -546,10 +612,12 @@ function App() {
     setAppState(prev => ({
       ...prev,
       ...catalogFields,
-      mySchedule: rematchSavedCourses(options.mySchedule ?? prev.mySchedule, courses),
-      myOnlineClasses: rematchSavedCourses(options.myOnlineClasses ?? prev.myOnlineClasses, online),
+      mySchedule,
+      myOnlineClasses,
       customBlocks: options.customBlocks ?? prev.customBlocks,
       catalogFetchedAt: snapshot.fetchedAt,
+      catalogTermCode: snapshot.termCode || null,
+      catalogTermLabel: newTermLabel,
       isLoading: false,
       error: null,
       importProgress: 100,
@@ -564,12 +632,9 @@ function App() {
     }, 800);
   }, []);
 
-  const syncCatalog = useCallback(async (options: {
+  const syncCatalog = useCallback(async (options: CatalogSyncOptions & {
     localFetchedAt?: string | null;
     hasLocalCatalog?: boolean;
-    mySchedule?: Course[];
-    myOnlineClasses?: Course[];
-    customBlocks?: AppState['customBlocks'];
     openSubjectPicker?: boolean;
     force?: boolean;
   } = {}) => {
@@ -606,6 +671,8 @@ function App() {
         setAppState(prev => ({
           ...prev,
           catalogFetchedAt: remoteFetchedAt || prev.catalogFetchedAt,
+          catalogTermCode: meta?.termCode || prev.catalogTermCode,
+          catalogTermLabel: meta ? `${meta.term} ${meta.year}` : prev.catalogTermLabel,
           isLoading: false,
           error: null,
           importProgress: 0,
@@ -630,6 +697,8 @@ function App() {
         setAppState(prev => ({
           ...prev,
           catalogFetchedAt: snapshot.fetchedAt,
+          catalogTermCode: snapshot.termCode || prev.catalogTermCode,
+          catalogTermLabel: `${snapshot.term} ${snapshot.year}`,
           isLoading: false,
           error: null,
           importProgress: 0,
@@ -676,6 +745,8 @@ function App() {
         campuses: savedData.campuses,
         subjectData: savedData.subjectData as Map<string, SubjectData>,
         catalogFetchedAt: savedData.catalogFetchedAt || null,
+        catalogTermCode: savedData.catalogTermCode,
+        catalogTermLabel: savedData.catalogTermLabel,
         mySchedule: [],
         myOnlineClasses: [],
         customBlocks: [],
@@ -688,6 +759,9 @@ function App() {
         mySchedule: [],
         myOnlineClasses: [],
         customBlocks: [],
+        localTermCode: savedData.catalogTermCode,
+        localTermLabel: savedData.catalogTermLabel,
+        localCourses: savedData.allCourses,
       });
     }
   }, [loadFromLocalStorage, syncCatalog]);
@@ -709,6 +783,8 @@ function App() {
         subjectData: savedData.subjectData as Map<string, SubjectData>,
         filters: savedData.filters,
         catalogFetchedAt: savedData.catalogFetchedAt || null,
+        catalogTermCode: savedData.catalogTermCode,
+        catalogTermLabel: savedData.catalogTermLabel,
       }));
       setIsLightMode(savedData.isLightMode);
       setShowRestorePrompt(false);
@@ -718,7 +794,10 @@ function App() {
         mySchedule: savedData.mySchedule,
         myOnlineClasses: savedData.myOnlineClasses,
         customBlocks: savedData.customBlocks || [],
-        openSubjectPicker: savedData.filters.subjectAllow.size === 0,
+        localTermCode: savedData.catalogTermCode,
+        localTermLabel: savedData.catalogTermLabel,
+        localCourses: savedData.allCourses,
+        openSubjectPicker: savedData.filters.neededCourses.size === 0 && savedData.filters.subjectAllow.size === 0,
       });
       console.log('🔄 Data restored from local storage');
       console.log('🔄 Custom blocks restored:', savedData.customBlocks?.length || 0);
@@ -742,6 +821,8 @@ function App() {
         campuses: savedData.campuses,
         subjectData: savedData.subjectData as Map<string, SubjectData>,
         catalogFetchedAt: savedData.catalogFetchedAt || null,
+        catalogTermCode: savedData.catalogTermCode,
+        catalogTermLabel: savedData.catalogTermLabel,
         mySchedule: [],
         myOnlineClasses: [],
         customBlocks: [],
@@ -755,6 +836,9 @@ function App() {
         mySchedule: [],
         myOnlineClasses: [],
         customBlocks: [],
+        localTermCode: savedData.catalogTermCode,
+        localTermLabel: savedData.catalogTermLabel,
+        localCourses: savedData.allCourses,
       });
       console.log('❌ Saved schedule discarded; kept local catalog');
       return;
@@ -765,29 +849,27 @@ function App() {
     console.log('❌ Saved data discarded');
   }, [loadFromLocalStorage, persistCatalogOnly, syncCatalog, clearLocalStorage]);
 
+  const currentCatalogSyncOptions = useCallback((): CatalogSyncOptions & { localFetchedAt: string | null; hasLocalCatalog: boolean } => ({
+    localFetchedAt: appState.catalogFetchedAt,
+    hasLocalCatalog: appState.allCourses.length > 0,
+    mySchedule: appState.mySchedule,
+    myOnlineClasses: appState.myOnlineClasses,
+    customBlocks: appState.customBlocks,
+    localTermCode: appState.catalogTermCode,
+    localTermLabel: appState.catalogTermLabel,
+    localCourses: appState.allCourses,
+  }), [appState]);
+
   const handleLoadCatalog = useCallback(async () => {
-    await syncCatalog({
-      localFetchedAt: appState.catalogFetchedAt,
-      hasLocalCatalog: appState.allCourses.length > 0,
-      mySchedule: appState.mySchedule,
-      myOnlineClasses: appState.myOnlineClasses,
-      customBlocks: appState.customBlocks,
-    });
-  }, [syncCatalog, appState.catalogFetchedAt, appState.allCourses.length, appState.mySchedule, appState.myOnlineClasses, appState.customBlocks]);
+    await syncCatalog(currentCatalogSyncOptions());
+  }, [syncCatalog, currentCatalogSyncOptions]);
 
   const refreshCatalogFromConsole = useCallback(async () => {
     syncingCatalogRef.current = false;
     console.info('Refreshing course catalog…');
-    await syncCatalog({
-      localFetchedAt: appState.catalogFetchedAt,
-      hasLocalCatalog: appState.allCourses.length > 0,
-      mySchedule: appState.mySchedule,
-      myOnlineClasses: appState.myOnlineClasses,
-      customBlocks: appState.customBlocks,
-      force: true,
-    });
+    await syncCatalog({ ...currentCatalogSyncOptions(), force: true });
     console.info('Course catalog refresh finished.');
-  }, [syncCatalog, appState.catalogFetchedAt, appState.allCourses.length, appState.mySchedule, appState.myOnlineClasses, appState.customBlocks]);
+  }, [syncCatalog, currentCatalogSyncOptions]);
 
   useEffect(() => {
     window.refreshCatalog = refreshCatalogFromConsole;
@@ -860,6 +942,8 @@ function App() {
       mySchedule: appState.mySchedule,
       myOnlineClasses: appState.myOnlineClasses,
       customBlocks: appState.customBlocks,
+      termCode: appState.catalogTermCode || undefined,
+      termLabel: appState.catalogTermLabel || undefined,
       createdAt: editingScheduleId 
         ? savedSchedules.find(s => s.id === editingScheduleId)?.createdAt || Date.now()
         : Date.now(),
@@ -875,20 +959,36 @@ function App() {
     setSaveScheduleModalOpen(false);
     setScheduleName('');
     setEditingScheduleId(null);
-  }, [scheduleName, appState.mySchedule, appState.myOnlineClasses, appState.customBlocks, editingScheduleId, savedSchedules]);
+  }, [scheduleName, appState.mySchedule, appState.myOnlineClasses, appState.customBlocks, appState.catalogTermCode, appState.catalogTermLabel, editingScheduleId, savedSchedules]);
 
   const handleLoadSavedSchedule = useCallback((scheduleId: string) => {
     const schedule = savedSchedules.find(s => s.id === scheduleId);
     if (schedule) {
+      const fromOtherTerm = Boolean(schedule.termCode && appState.catalogTermCode && schedule.termCode !== appState.catalogTermCode);
+      const hasCatalog = appState.allCourses.length > 0;
+      const mySchedule = fromOtherTerm
+        ? markUnavailable(schedule.mySchedule)
+        : hasCatalog ? rematchSavedCourses(schedule.mySchedule, appState.allCourses) : schedule.mySchedule;
+      const myOnlineClasses = fromOtherTerm
+        ? markUnavailable(schedule.myOnlineClasses)
+        : hasCatalog ? rematchSavedCourses(schedule.myOnlineClasses, appState.onlineCourses) : schedule.myOnlineClasses;
       setAppState(prev => ({
         ...prev,
-        mySchedule: schedule.mySchedule,
-        myOnlineClasses: schedule.myOnlineClasses,
+        mySchedule,
+        myOnlineClasses,
         customBlocks: schedule.customBlocks,
       }));
       setSelectedScheduleId(scheduleId);
+      if (fromOtherTerm) {
+        setCatalogNotice(`"${schedule.name}" is from ${schedule.termLabel || 'an earlier semester'}. Its classes are shown for reference and aren't in the ${catalogMeta.term} ${catalogMeta.year} schedule.`);
+      } else {
+        const lost = countNewlyUnavailable(schedule.mySchedule, mySchedule) + countNewlyUnavailable(schedule.myOnlineClasses, myOnlineClasses);
+        if (lost > 0) {
+          setCatalogNotice(`${lost} ${lost === 1 ? 'class' : 'classes'} in "${schedule.name}" ${lost === 1 ? 'is' : 'are'} no longer listed by COS.`);
+        }
+      }
     }
-  }, [savedSchedules]);
+  }, [savedSchedules, appState.catalogTermCode, appState.allCourses, appState.onlineCourses, catalogMeta.term, catalogMeta.year]);
 
   const handleDeleteSchedule = useCallback((scheduleId: string) => {
     // eslint-disable-next-line no-restricted-globals
@@ -1122,7 +1222,7 @@ function App() {
   const handleAddCourse = useCallback((crn: string) => {
     setAppState(prev => {
       const course = prev.allCourses.find(c => c.CRN === crn);
-      if (!course || prev.mySchedule.find(c => c.CRN === crn)) {
+      if (!course || prev.mySchedule.find(c => c.CRN === crn && !c.unavailable)) {
         return prev;
       }
 
@@ -1140,6 +1240,7 @@ function App() {
       const newSchedule = [...prev.mySchedule];
       coursesWithSameCRN.forEach(crs => {
         const alreadyExists = newSchedule.find(c => 
+          !c.unavailable &&
           c.CRN === crs.CRN && 
           c.Days === crs.Days && 
           c.DispTime === crs.DispTime
@@ -1164,7 +1265,7 @@ function App() {
   const handleAddOnlineCourse = useCallback((crn: string) => {
     setAppState(prev => {
       const course = prev.onlineCourses.find(c => c.CRN === crn);
-      if (!course || prev.myOnlineClasses.find(c => c.CRN === crn)) {
+      if (!course || prev.myOnlineClasses.find(c => c.CRN === crn && !c.unavailable)) {
         return prev;
       }
       return {
@@ -1552,7 +1653,7 @@ function App() {
             </Typography>
           )}
           <Typography variant="body2" sx={{ fontSize: '13px', color: 'text.secondary' }}>
-            Build your {scheduleLabel} course schedule. Choose a subject to get started.
+            Build your {scheduleLabel} course schedule. Start by choosing the classes you need.
           </Typography>
         </Box>
         
@@ -1604,7 +1705,7 @@ function App() {
                   }
                 }}
               >
-                Select Subjects
+                Choose Classes
               </Button>
             </Box>
 
@@ -2530,6 +2631,37 @@ function App() {
                             <ListItemText>Compare schedules</ListItemText>
                           </MenuItem>
                         )}
+                        {savedSchedules.length > 0 && [
+                          <Divider key="saved-divider" />,
+                          <ListSubheader key="saved-header" sx={{ lineHeight: '32px', background: 'transparent' }}>
+                            Saved schedules
+                          </ListSubheader>,
+                          <MenuItem
+                            key="saved-current"
+                            selected={selectedScheduleId === ''}
+                            onClick={() => {
+                              setSelectedScheduleId('');
+                              setMyScheduleActionsAnchor(null);
+                            }}
+                          >
+                            <ListItemText primaryTypographyProps={{ fontStyle: 'italic' }}>Current Schedule</ListItemText>
+                          </MenuItem>,
+                          ...savedSchedules.map((schedule) => (
+                            <MenuItem
+                              key={schedule.id}
+                              selected={selectedScheduleId === schedule.id}
+                              onClick={() => {
+                                handleLoadSavedSchedule(schedule.id);
+                                setMyScheduleActionsAnchor(null);
+                              }}
+                            >
+                              <ListItemIcon>
+                                <FolderOpen fontSize="small" />
+                              </ListItemIcon>
+                              <ListItemText>{schedule.name}</ListItemText>
+                            </MenuItem>
+                          )),
+                        ]}
                         <Divider />
                         <MenuItem
                           onClick={() => {
@@ -2633,21 +2765,38 @@ function App() {
         </Box>
       </Box>
 
+      <Snackbar
+        open={Boolean(catalogNotice)}
+        onClose={(_, reason) => {
+          if (reason !== 'clickaway') setCatalogNotice(null);
+        }}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert severity="info" variant="filled" onClose={() => setCatalogNotice(null)} sx={{ maxWidth: 560 }}>
+          {catalogNotice}
+        </Alert>
+      </Snackbar>
+
       {/* Import Modal */}
         <ImportModal
           open={importModalOpen}
           onClose={() => setImportModalOpen(false)}
           onLoadCatalog={handleLoadCatalog}
-          onCompleteImport={() => setImportModalOpen(false)}
+          onCompleteImport={(neededCourses) => {
+            handleFilterChange(filtersFromNeededCourses(neededCourses));
+            setImportModalOpen(false);
+          }}
           isLoading={appState.isLoading}
           error={appState.error}
           progress={appState.importProgress}
           progressText={appState.importProgressText}
           subjects={appState.subjects}
-          selectedSubjects={appState.filters.subjectAllow}
+          selectedClasses={appState.filters.neededCourses}
+          allCourses={appState.allCourses}
+          onlineCourses={appState.onlineCourses}
+          subjectData={appState.subjectData}
           scheduleLabel={scheduleLabel}
           lastUpdatedLabel={lastUpdatedLabel}
-          onSubjectToggle={(subject) => handleFilterChange({ subjectAllow: new Set([...appState.filters.subjectAllow].includes(subject) ? [...appState.filters.subjectAllow].filter(s => s !== subject) : [...appState.filters.subjectAllow, subject]) })}
         />
 
       {/* Save/Load Modal */}

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -11,24 +11,35 @@ import {
   Alert,
   IconButton,
   Chip,
-  Collapse,
+  TextField,
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemText,
 } from '@mui/material';
-import { Close, ExpandMore, ExpandLess } from '@mui/icons-material';
+import { ArrowBack, Close, Search } from '@mui/icons-material';
+import { Course, SubjectData } from '../types';
+import {
+  searchCatalogClasses,
+  uniqueCatalogClasses,
+} from '../utils/catalogClasses';
 
 interface ImportModalProps {
   open: boolean;
   onClose: () => void;
   onLoadCatalog: () => Promise<void>;
-  onCompleteImport: () => void;
+  onCompleteImport: (neededCourses: Set<string>) => void;
   isLoading: boolean;
   error: string | null;
   progress: number;
   progressText: string;
   subjects: Set<string>;
-  selectedSubjects: Set<string>;
+  selectedClasses: Set<string>;
+  allCourses: Course[];
+  onlineCourses: Course[];
+  subjectData: Map<string, SubjectData>;
   scheduleLabel: string;
   lastUpdatedLabel: string | null;
-  onSubjectToggle: (subject: string) => void;
 }
 
 const ImportModal: React.FC<ImportModalProps> = ({
@@ -41,32 +52,63 @@ const ImportModal: React.FC<ImportModalProps> = ({
   progress,
   progressText,
   subjects,
-  selectedSubjects,
+  selectedClasses,
+  allCourses,
+  onlineCourses,
+  subjectData,
   scheduleLabel,
   lastUpdatedLabel,
-  onSubjectToggle,
 }) => {
-  const [subjectsExpanded, setSubjectsExpanded] = useState(true);
   const loadRequestedRef = useRef(false);
+  const [query, setQuery] = useState('');
+  const [browseSubject, setBrowseSubject] = useState<string | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!open) {
       loadRequestedRef.current = false;
+      setQuery('');
+      setBrowseSubject(null);
       return;
     }
+    setPicked(new Set(selectedClasses));
     if (subjects.size > 0 || isLoading || loadRequestedRef.current) {
       return;
     }
     loadRequestedRef.current = true;
     void onLoadCatalog();
-  }, [open, subjects.size, isLoading, onLoadCatalog]);
+  }, [open, subjects.size, isLoading, onLoadCatalog, selectedClasses]);
+
+  const catalogClasses = useMemo(
+    () => uniqueCatalogClasses([...allCourses, ...onlineCourses]),
+    [allCourses, onlineCourses]
+  );
+
+  const searchHits = useMemo(
+    () => searchCatalogClasses(catalogClasses, query),
+    [catalogClasses, query]
+  );
+
+  const browsedClasses = useMemo(() => {
+    if (!browseSubject) return [];
+    return catalogClasses.filter(entry => entry.subject === browseSubject);
+  }, [browseSubject, catalogClasses]);
+
+  const toggleClass = (key: string) => {
+    setPicked(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   const handleComplete = () => {
-    if (selectedSubjects.size === 0) {
-      alert('Please select at least one subject before continuing.');
+    if (picked.size === 0) {
+      alert('Please select at least one class before continuing.');
       return;
     }
-    onCompleteImport();
+    onCompleteImport(picked);
   };
 
   const handleClose = () => {
@@ -79,6 +121,9 @@ const ImportModal: React.FC<ImportModalProps> = ({
     loadRequestedRef.current = true;
     void onLoadCatalog();
   };
+
+  const listClasses = query.trim() ? searchHits : browsedClasses;
+  const showingBrowse = !query.trim() && Boolean(browseSubject);
 
   return (
     <Dialog
@@ -115,7 +160,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
             color: 'text.primary',
             margin: 0,
           }}>
-            Select Subjects
+            What classes do you need?
           </Typography>
           <Typography variant="body2" sx={{
             fontSize: '14px',
@@ -182,93 +227,160 @@ const ImportModal: React.FC<ImportModalProps> = ({
               <Typography variant="body1" sx={{
                 fontSize: '14px',
                 color: 'text.secondary',
-                marginBottom: '20px',
+                marginBottom: '16px',
                 lineHeight: 1.6,
               }}>
-                Choose which subjects you want to include in your schedule.
-                Select at least one subject to continue.
+                Search for the classes you already know you need, like MATH 010 or CHEM 012.
+                We’ll put every available section on the calendar so you can pick times that fit.
               </Typography>
 
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                <Typography variant="subtitle1" sx={{
-                  fontSize: '16px',
-                  color: 'text.primary',
-                  fontWeight: '600',
-                }}>
-                  Available Subjects ({subjects.size})
-                </Typography>
-                <IconButton
-                  size="small"
-                  onClick={() => setSubjectsExpanded(!subjectsExpanded)}
-                  sx={{ ml: 1 }}
-                >
-                  {subjectsExpanded ? <ExpandLess /> : <ExpandMore />}
-                </IconButton>
-              </Box>
-
-              <Collapse in={subjectsExpanded}>
-                <Box sx={{
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  gap: 1,
-                  mb: 2,
-                  padding: '16px',
-                  background: (theme) => theme.palette.mode === 'dark' ? '#0f1622' : '#f8fafc',
-                  borderRadius: '12px',
-                  border: (theme) => theme.palette.mode === 'dark' ? '1px solid #2a3c55' : '1px solid #e5e7eb',
-                  maxHeight: '200px',
-                  overflowY: 'auto',
-                }}>
-                  {Array.from(subjects).sort().map((subject: string) => (
+              {picked.size > 0 && (
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
+                  {Array.from(picked).sort().map(key => (
                     <Chip
-                      key={subject}
-                      label={subject}
-                      clickable
-                      color={selectedSubjects.has(subject) ? 'primary' : 'default'}
-                      onClick={() => onSubjectToggle(subject)}
-                      size="small"
+                      key={key}
+                      label={key}
+                      onDelete={() => toggleClass(key)}
                       sx={{
-                        padding: '1px 1px',
-                        height: '28px',
-                        fontSize: '13px',
-                        background: selectedSubjects.has(subject)
-                          ? 'linear-gradient(135deg, #2563eb, #059669)'
-                          : undefined,
-                        color: selectedSubjects.has(subject) ? 'white' : undefined,
-                        '&.MuiChip-clickable:hover': {
-                          background: selectedSubjects.has(subject)
-                            ? 'linear-gradient(135deg, #1d4ed8, #047857)'
-                            : (theme) => theme.palette.mode === 'dark' ? '#1a2532' : '#e5e7eb',
-                        },
-                        '&.MuiChip-colorPrimary': {
-                          borderColor: 'transparent',
-                          boxShadow: '0 2px 8px rgba(37, 99, 235, 0.3)',
-                        },
+                        background: 'linear-gradient(135deg, #2563eb, #059669)',
+                        color: 'white',
+                        fontWeight: 600,
+                        '& .MuiChip-deleteIcon': { color: 'rgba(255,255,255,0.85)' },
                       }}
                     />
                   ))}
                 </Box>
+              )}
 
-                {selectedSubjects.size === 0 && (
-                  <Alert severity="warning" sx={{
-                    '& .MuiAlert-message': { fontSize: '13px' },
-                    borderRadius: '8px',
-                    mb: 2,
-                  }}>
-                    Please select at least one subject to view courses.
-                  </Alert>
-                )}
+              <TextField
+                fullWidth
+                size="small"
+                placeholder="Search classes, titles, or subjects…"
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  if (e.target.value.trim()) setBrowseSubject(null);
+                }}
+                InputProps={{
+                  startAdornment: <Search sx={{ mr: 1, color: 'text.secondary' }} />,
+                }}
+                sx={{
+                  mb: 2,
+                  '& .MuiOutlinedInput-root': {
+                    backgroundColor: (theme) => theme.palette.mode === 'dark' ? '#0f1622' : '#ffffff',
+                  },
+                }}
+              />
 
-                {selectedSubjects.size > 0 && (
-                  <Alert severity="success" sx={{
-                    '& .MuiAlert-message': { fontSize: '13px' },
-                    borderRadius: '8px',
-                    mb: 2,
+              {showingBrowse && (
+                <Button
+                  startIcon={<ArrowBack />}
+                  onClick={() => setBrowseSubject(null)}
+                  sx={{ textTransform: 'none', mb: 1, alignSelf: 'flex-start' }}
+                >
+                  All subjects
+                </Button>
+              )}
+
+              {!query.trim() && !browseSubject && (
+                <>
+                  <Typography variant="subtitle1" sx={{
+                    fontSize: '16px',
+                    color: 'text.primary',
+                    fontWeight: 600,
+                    mb: 1,
                   }}>
-                    {selectedSubjects.size} subject{selectedSubjects.size !== 1 ? 's' : ''} selected: {Array.from(selectedSubjects).join(', ')}
-                  </Alert>
-                )}
-              </Collapse>
+                    Or browse by subject
+                  </Typography>
+                  <Box sx={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: 1,
+                    padding: '16px',
+                    background: (theme) => theme.palette.mode === 'dark' ? '#0f1622' : '#f8fafc',
+                    borderRadius: '12px',
+                    border: (theme) => theme.palette.mode === 'dark' ? '1px solid #2a3c55' : '1px solid #e5e7eb',
+                    maxHeight: '180px',
+                    overflowY: 'auto',
+                  }}>
+                    {Array.from(subjects).sort().map((subject: string) => (
+                      <Chip
+                        key={subject}
+                        label={subject}
+                        clickable
+                        onClick={() => setBrowseSubject(subject)}
+                        size="small"
+                        sx={{ height: '28px', fontSize: '13px' }}
+                      />
+                    ))}
+                  </Box>
+                </>
+              )}
+
+              {(query.trim() || browseSubject) && (
+                <Box sx={{
+                  borderRadius: '12px',
+                  border: (theme) => theme.palette.mode === 'dark' ? '1px solid #2a3c55' : '1px solid #e5e7eb',
+                  background: (theme) => theme.palette.mode === 'dark' ? '#0f1622' : '#f8fafc',
+                  maxHeight: '280px',
+                  overflowY: 'auto',
+                }}>
+                  {listClasses.length === 0 ? (
+                    <Box sx={{ p: 2, textAlign: 'center' }}>
+                      <Typography variant="body2" color="text.secondary">
+                        {query.trim() ? 'No matching classes.' : `No classes found for ${browseSubject}.`}
+                      </Typography>
+                    </Box>
+                  ) : (
+                    <List dense sx={{ py: 0 }}>
+                      {listClasses.map(entry => {
+                        const selected = picked.has(entry.key);
+                        const sectionCount = new Set(
+                          (subjectData.get(entry.subject)?.courses || [])
+                            .filter(c => c.Course === entry.course && !c.isLabSection)
+                            .map(c => c.CRN)
+                        ).size;
+                        return (
+                          <ListItem key={entry.key} disablePadding>
+                            <ListItemButton
+                              onClick={() => toggleClass(entry.key)}
+                              selected={selected}
+                              sx={{
+                                py: 1,
+                                background: selected
+                                  ? (theme) => theme.palette.mode === 'dark'
+                                    ? 'rgba(37, 99, 235, 0.2)'
+                                    : 'rgba(37, 99, 235, 0.08)'
+                                  : undefined,
+                              }}
+                            >
+                              <ListItemText
+                                primary={entry.key}
+                                secondary={entry.title}
+                                primaryTypographyProps={{ fontSize: '14px', fontWeight: 600 }}
+                                secondaryTypographyProps={{ fontSize: '12px' }}
+                              />
+                              <Typography variant="caption" color="text.secondary">
+                                {selected ? 'Added' : (sectionCount > 0 ? `${sectionCount} section${sectionCount === 1 ? '' : 's'}` : '')}
+                              </Typography>
+                            </ListItemButton>
+                          </ListItem>
+                        );
+                      })}
+                    </List>
+                  )}
+                </Box>
+              )}
+
+              {picked.size === 0 && (
+                <Alert severity="info" sx={{
+                  '& .MuiAlert-message': { fontSize: '13px' },
+                  borderRadius: '8px',
+                  mt: 2,
+                }}>
+                  Add at least one class to see its sections on the calendar.
+                </Alert>
+              )}
             </Box>
           )}
 
@@ -317,7 +429,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
         <Button
           variant="contained"
           onClick={handleComplete}
-          disabled={isLoading || selectedSubjects.size === 0}
+          disabled={isLoading || picked.size === 0}
           sx={{
             background: 'linear-gradient(90deg, #2563eb, #059669)',
             color: 'white',
@@ -335,7 +447,9 @@ const ImportModal: React.FC<ImportModalProps> = ({
             },
           }}
         >
-          Continue
+          {picked.size === 0
+            ? 'Show classes on calendar'
+            : `Show ${picked.size} class${picked.size === 1 ? '' : 'es'} on calendar`}
         </Button>
       </DialogActions>
     </Dialog>

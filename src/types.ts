@@ -23,6 +23,7 @@ export interface Course {
   isCustomBlock?: boolean;
   customCrn?: string;
   customField?: string;
+  unavailable?: boolean;
 }
 
 export interface CustomTimeBlock {
@@ -44,6 +45,8 @@ export interface SavedSchedule {
   mySchedule: Course[];
   myOnlineClasses: Course[];
   customBlocks: CustomTimeBlock[];
+  termCode?: string;
+  termLabel?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -57,6 +60,7 @@ export interface FilterState {
   showFullClasses: boolean;
   showFullWaitlist: boolean;
   showConflicts: boolean;
+  neededCourses: Set<string>;
 }
 
 export interface SubjectData {
@@ -83,6 +87,8 @@ export interface AppState {
   importProgress: number;
   importProgressText: string;
   catalogFetchedAt: string | null;
+  catalogTermCode: string | null;
+  catalogTermLabel: string | null;
 }
 
 export const DAYS = ['M', 'T', 'W', 'R', 'F'] as const;

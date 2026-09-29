@@ -66,7 +66,7 @@ export function meetingsOverlap(
 }
 
 export function occupiedMeetings(mySchedule: Course[], customBlocks: CustomTimeBlock[]): Course[] {
-  return [...mySchedule, ...customBlocksToCourses(customBlocks)];
+  return [...mySchedule.filter(course => !course.unavailable), ...customBlocksToCourses(customBlocks)];
 }
 
 export function conflictingCrns(catalog: Course[], occupied: Course[]): Set<string> {
