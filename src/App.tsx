@@ -1250,8 +1250,16 @@ function App() {
           newSchedule.push(crs);
         }
       });
+
+      // Hybrid sections: the online part of the same CRN goes to My Online Classes.
+      const onlineParts = prev.onlineCourses.filter(c => c.CRN === crn);
+      const hasOnlinePart = prev.myOnlineClasses.some(c => c.CRN === crn && !c.unavailable);
       
-      return { ...prev, mySchedule: newSchedule };
+      return {
+        ...prev,
+        mySchedule: newSchedule,
+        myOnlineClasses: hasOnlinePart ? prev.myOnlineClasses : [...prev.myOnlineClasses, ...onlineParts],
+      };
     });
   }, []);
 
@@ -1259,18 +1267,32 @@ function App() {
     setAppState(prev => ({
       ...prev,
       mySchedule: prev.mySchedule.filter(c => c.CRN !== crn),
+      myOnlineClasses: prev.myOnlineClasses.filter(c => c.CRN !== crn),
     }));
   }, []);
 
   const handleAddOnlineCourse = useCallback((crn: string) => {
     setAppState(prev => {
-      const course = prev.onlineCourses.find(c => c.CRN === crn);
-      if (!course || prev.myOnlineClasses.find(c => c.CRN === crn && !c.unavailable)) {
+      const onlineParts = prev.onlineCourses.filter(c => c.CRN === crn);
+      if (onlineParts.length === 0 || prev.myOnlineClasses.find(c => c.CRN === crn && !c.unavailable)) {
         return prev;
       }
+
+      // Hybrid sections: in-person meetings of the same CRN go on the calendar.
+      const meetings = prev.allCourses.filter(c => c.CRN === crn);
+      const alreadyOnCalendar = prev.mySchedule.some(c => c.CRN === crn && !c.unavailable);
+      if (meetings.length > 0 && !alreadyOnCalendar) {
+        const conflictName = firstConflictName(meetings, occupiedMeetings(prev.mySchedule, prev.customBlocks));
+        // eslint-disable-next-line no-restricted-globals
+        if (conflictName && !confirm(`Time conflict with ${conflictName}. Add anyway?`)) {
+          return prev;
+        }
+      }
+
       return {
         ...prev,
-        myOnlineClasses: [...prev.myOnlineClasses, course]
+        mySchedule: alreadyOnCalendar ? prev.mySchedule : [...prev.mySchedule, ...meetings],
+        myOnlineClasses: [...prev.myOnlineClasses, ...onlineParts],
       };
     });
   }, []);
@@ -1278,7 +1300,8 @@ function App() {
   const handleRemoveOnlineCourse = useCallback((crn: string) => {
     setAppState(prev => ({
       ...prev,
-      myOnlineClasses: prev.myOnlineClasses.filter(course => course.CRN !== crn)
+      myOnlineClasses: prev.myOnlineClasses.filter(course => course.CRN !== crn),
+      mySchedule: prev.mySchedule.filter(course => course.CRN !== crn),
     }));
   }, []);
 

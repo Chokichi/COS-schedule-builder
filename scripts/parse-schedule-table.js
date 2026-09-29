@@ -71,6 +71,22 @@ function findScheduleTable(document) {
     || null;
 }
 
+/**
+ * Cell text with colspans expanded, so every section row lines up with the
+ * standard layout: status, CRN, units, 7 day columns, time, dates, location,
+ * campus, 6 seat columns, instructor. Lab rows merge the first three
+ * (colspan=3) and asynchronous online rows merge days+time (colspan=8).
+ */
+function expandedCellText(row) {
+  const out = [];
+  for (const td of Array.from(row.querySelectorAll('td'))) {
+    out.push((td.textContent || '').trim());
+    const span = parseInt(cellColspan(td) || '1', 10);
+    for (let i = 1; i < span; i++) out.push('');
+  }
+  return out;
+}
+
 function deheaderCells(row) {
   return Array.from(row.querySelectorAll('td')).filter((td) => hasClass(td, 'deheader'));
 }
@@ -119,54 +135,54 @@ function parseScheduleTable(document) {
       continue;
     }
 
-    const cells = row.querySelectorAll('td');
-    if (cells.length < 10) continue;
+    const rawCells = row.querySelectorAll('td');
+    if (rawCells.length < 10) continue;
+    const cells = expandedCellText(row);
 
-    const firstCell = cells[0];
+    const firstCell = rawCells[0];
     const isContinuation = firstCell && cellColspan(firstCell) === '3' && !row.querySelector('a[href*="p_course_popup"]');
 
     let crn;
     let instructor;
-    let dayStartIndex = 3;
-    let timeIndex = 10;
-    let locationIndex = 12;
-    let campusIndex = 13;
 
     if (isContinuation) {
       if (!lastCRN) continue;
       crn = lastCRN;
       instructor = lastInstructor;
-      dayStartIndex = 1;
-      timeIndex = 8;
-      locationIndex = 10;
-      campusIndex = 11;
     } else {
       const crnLink = row.querySelector('a[href*="p_course_popup"]');
       if (!crnLink) continue;
       crn = (crnLink.textContent || '').trim();
-      instructor = (cells[20]?.textContent || '').trim();
+      instructor = cells[20] || '';
       lastCRN = crn;
       lastInstructor = instructor;
     }
 
     let days = '';
-    const dayEnd = Math.min(dayStartIndex + 5, cells.length);
-    for (let i = dayStartIndex; i < dayEnd; i++) {
-      const txt = (cells[i]?.textContent || '').trim();
-      if (txt && dayPattern.test(txt)) days += txt;
+    for (let i = 3; i < 8; i++) {
+      if (cells[i] && dayPattern.test(cells[i])) days += cells[i];
     }
 
-    const timeText = (cells[timeIndex]?.textContent || '').trim();
+    const location = cells[12] || '';
+    const timeText = cells[10] || '';
     const tm = timeText.match(timePattern);
-    if (!tm) continue;
+    let startMin = 0;
+    let endMin = 0;
+    let dispTime = timeText;
+    if (tm) {
+      startMin = timeToMinutes(tm[1]);
+      endMin = timeToMinutes(tm[2]);
+      if (startMin == null || endMin == null) continue;
+    } else if (isContinuation) {
+      continue;
+    } else {
+      // Asynchronous online / arranged sections have no meeting time.
+      days = '';
+      dispTime = location.toLowerCase().includes('online') ? 'Online (no set meeting time)' : 'TBA';
+    }
 
-    const startMin = timeToMinutes(tm[1]);
-    const endMin = timeToMinutes(tm[2]);
-    if (startMin == null || endMin == null) continue;
-
-    const location = (cells[locationIndex]?.textContent || '').trim();
-    const campus = (cells[campusIndex]?.textContent || '').trim();
-    const units = isContinuation ? 0 : parseFloat((cells[2]?.textContent || '').trim() || '0');
+    const campus = cells[13] || '';
+    const units = isContinuation ? 0 : parseFloat(cells[2] || '0');
 
     let capacity = 0;
     let actual = 0;
@@ -175,13 +191,12 @@ function parseScheduleTable(document) {
     let waitAct = 0;
     let waitRem = 0;
     if (!isContinuation) {
-      const baseIndex = 14;
-      capacity = parseInt((cells[baseIndex]?.textContent || '').trim() || '0', 10);
-      actual = parseInt((cells[baseIndex + 1]?.textContent || '').trim() || '0', 10);
-      remaining = parseInt((cells[baseIndex + 2]?.textContent || '').trim() || '0', 10);
-      waitCap = parseInt((cells[baseIndex + 3]?.textContent || '').trim() || '0', 10);
-      waitAct = parseInt((cells[baseIndex + 4]?.textContent || '').trim() || '0', 10);
-      waitRem = parseInt((cells[baseIndex + 5]?.textContent || '').trim() || '0', 10);
+      capacity = parseInt(cells[14] || '0', 10);
+      actual = parseInt(cells[15] || '0', 10);
+      remaining = parseInt(cells[16] || '0', 10);
+      waitCap = parseInt(cells[17] || '0', 10);
+      waitAct = parseInt(cells[18] || '0', 10);
+      waitRem = parseInt(cells[19] || '0', 10);
     }
 
     const courseEntry = compactCourse({
@@ -194,7 +209,7 @@ function parseScheduleTable(document) {
       Campus: campus,
       Units: units,
       Days: days,
-      DispTime: timeText,
+      DispTime: dispTime,
       StartMin: startMin,
       EndMin: endMin,
       Capacity: Number.isFinite(capacity) ? capacity : 0,
