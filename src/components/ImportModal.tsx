@@ -184,7 +184,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
         </IconButton>
       </DialogTitle>
 
-      <DialogContent sx={{ padding: '24px' }}>
+      <DialogContent sx={{ padding: '24px', '.MuiDialogTitle-root + &': { paddingTop: '20px' } }}>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           {isLoading && (
             <Box sx={{ width: '100%' }}>
@@ -225,12 +225,20 @@ const ImportModal: React.FC<ImportModalProps> = ({
           {subjects.size > 0 && (
             <Box>
               <Typography variant="body1" sx={{
-                fontSize: '14px',
-                color: 'text.secondary',
+                fontSize: '15px',
+                fontWeight: 500,
+                color: 'text.primary',
                 marginBottom: '16px',
                 lineHeight: 1.6,
+                padding: '10px 14px',
+                borderLeft: '4px solid',
+                borderColor: 'primary.main',
+                borderRadius: '6px',
+                background: (theme) => theme.palette.mode === 'dark'
+                  ? 'rgba(138, 180, 248, 0.12)'
+                  : 'rgba(37, 99, 235, 0.08)',
               }}>
-                Search for the classes you already know you need, like MATH 010 or CHEM 012.
+                Search for the classes you already know you need, like <strong>MATH 010</strong> or <strong>CHEM 012</strong>.
                 We’ll put every available section on the calendar so you can pick times that fit.
               </Typography>
 
