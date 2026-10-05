@@ -41,6 +41,7 @@ import {
   Edit,
   Delete,
   MoreVert,
+  QrCode2,
 } from '@mui/icons-material';
 import scheduleConfig from './scheduleConfig.json';
 import { AppState, FilterState, SubjectData, CustomTimeBlock, SavedSchedule, Course } from './types';
@@ -50,6 +51,7 @@ import OnlineCoursesList from './components/OnlineCoursesList';
 import ImportModal from './components/ImportModal';
 import SaveLoadModal from './components/SaveLoadModal';
 import CustomBlockModal from './components/CustomBlockModal';
+import ShareAppModal from './components/ShareAppModal';
 import { encodeCustomBlockForShare, decodeCustomBlockFromShare, formatFetchedAt, fetchScheduleMeta, fetchScheduleSnapshot, hydrateSnapshot, rematchSavedCourses, markUnavailable, countNewlyUnavailable, isTermChange, catalogIsStale, ScheduleSnapshot } from './utils/parser';
 import { occupiedMeetings, conflictingCrns, firstConflictName } from './utils/conflicts';
 import { filtersFromNeededCourses, matchesNeededOrSubjectFilters, neededFromLegacyCourseFilter } from './utils/catalogClasses';
@@ -281,6 +283,7 @@ function App() {
   const [layoutMenuAnchor, setLayoutMenuAnchor] = useState<{ available: HTMLElement | null; mySchedule: HTMLElement | null }>({ available: null, mySchedule: null });
   const [savedSchedules, setSavedSchedules] = useState<SavedSchedule[]>([]);
   const [catalogNotice, setCatalogNotice] = useState<string | null>(null);
+  const [shareAppOpen, setShareAppOpen] = useState(false);
   const [selectedScheduleId, setSelectedScheduleId] = useState<string | ''>('');
   const [saveLoadMenuAnchor, setSaveLoadMenuAnchor] = useState<HTMLElement | null>(null);
   const [saveScheduleModalOpen, setSaveScheduleModalOpen] = useState(false);
@@ -1667,6 +1670,8 @@ function App() {
             : 'rgba(255,255,255,0.9)',
           backdropFilter: 'blur(6px)'
         }}>
+          <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1 }}>
+          <Box sx={{ minWidth: 0 }}>
           <Typography variant="h6" sx={{ fontSize: '18px', margin: '0 0 4px 0' }}>
             📚 Student Schedule Builder — {scheduleLabel}
           </Typography>
@@ -1686,6 +1691,17 @@ function App() {
           <Typography variant="body2" sx={{ fontSize: '13px', color: 'text.secondary' }}>
             Build your {scheduleLabel} course schedule. Start by choosing the classes you need.
           </Typography>
+          </Box>
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<QrCode2 />}
+            onClick={() => setShareAppOpen(true)}
+            sx={{ flexShrink: 0, textTransform: 'none', borderRadius: '8px' }}
+          >
+            Share app
+          </Button>
+          </Box>
         </Box>
         
         {/* Main Grid Layout */}
@@ -2807,6 +2823,8 @@ function App() {
           {catalogNotice}
         </Alert>
       </Snackbar>
+
+      <ShareAppModal open={shareAppOpen} onClose={() => setShareAppOpen(false)} />
 
       {/* Import Modal */}
         <ImportModal
