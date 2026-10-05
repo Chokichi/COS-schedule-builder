@@ -52,7 +52,7 @@ import SaveLoadModal from './components/SaveLoadModal';
 import CustomBlockModal from './components/CustomBlockModal';
 import { encodeCustomBlockForShare, decodeCustomBlockFromShare, formatFetchedAt, fetchScheduleMeta, fetchScheduleSnapshot, hydrateSnapshot, rematchSavedCourses, markUnavailable, countNewlyUnavailable, isTermChange, catalogIsStale, ScheduleSnapshot } from './utils/parser';
 import { occupiedMeetings, conflictingCrns, firstConflictName } from './utils/conflicts';
-import { filtersFromNeededCourses, matchesNeededOrSubjectFilters } from './utils/catalogClasses';
+import { filtersFromNeededCourses, matchesNeededOrSubjectFilters, neededFromLegacyCourseFilter } from './utils/catalogClasses';
 
 declare global {
   interface Window {
@@ -313,7 +313,6 @@ function App() {
     // Check if any filter chips are selected (not including showFullClasses/showFullWaitlist)
     const hasFilterChips = appState.filters.neededCourses.size > 0 ||
                           appState.filters.subjectAllow.size > 0 || 
-                          appState.filters.courseAllow.size > 0 || 
                           appState.filters.instructorAllow.size > 0 || 
                           appState.filters.campusAllow.size > 0;
     
@@ -456,6 +455,15 @@ function App() {
         console.log('🔍 Custom blocks length:', data.customBlocks?.length);
 
         if (data.allCourses && data.allCourses.length > 0) {
+          const subjectAllow = new Set<string>(data.filters?.subjectAllow || []);
+          let neededCourses = new Set<string>(data.filters?.neededCourses || []);
+          if (neededCourses.size === 0) {
+            neededCourses = neededFromLegacyCourseFilter(
+              subjectAllow,
+              new Set<string>(data.filters?.courseAllow || []),
+              [...data.allCourses, ...(data.onlineCourses || [])],
+            );
+          }
           const loaded: LoadedLocalData = {
             allCourses: data.allCourses,
             onlineCourses: data.onlineCourses || [],
@@ -477,15 +485,15 @@ function App() {
               ])
             ),
             filters: {
-              subjectAllow: new Set<string>(data.filters?.subjectAllow || []),
-              courseAllow: new Set<string>(data.filters?.courseAllow || []),
+              subjectAllow,
+              courseAllow: new Set<string>(),
               instructorAllow: new Set<string>(data.filters?.instructorAllow || []),
               campusAllow: new Set<string>(data.filters?.campusAllow || []),
               showOnline: data.filters?.showOnline || false,
               showFullClasses: data.filters?.showFullClasses || false,
               showFullWaitlist: data.filters?.showFullWaitlist || false,
               showConflicts: data.filters?.showConflicts || false,
-              neededCourses: new Set<string>(data.filters?.neededCourses || []),
+              neededCourses,
             },
             customBlocks: data.customBlocks || [],
             isLightMode: data.isLightMode || false,
@@ -2806,7 +2814,7 @@ function App() {
           onClose={() => setImportModalOpen(false)}
           onLoadCatalog={handleLoadCatalog}
           onCompleteImport={(neededCourses) => {
-            handleFilterChange(filtersFromNeededCourses(neededCourses));
+            handleFilterChange(filtersFromNeededCourses(neededCourses, appState.filters.subjectAllow, appState.filters.neededCourses));
             setImportModalOpen(false);
           }}
           isLoading={appState.isLoading}

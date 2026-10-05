@@ -24,7 +24,7 @@ import {
   Search,
 } from '@mui/icons-material';
 import { FilterState, Course, SubjectData } from '../types';
-import { catalogClassKey, filtersFromNeededCourses } from '../utils/catalogClasses';
+import { catalogClassKey, filtersFromNeededCourses, toggleNeededCourse } from '../utils/catalogClasses';
 
 interface FilterPanelProps {
   filters: FilterState;
@@ -67,18 +67,16 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
   };
 
   // Filter courses and instructors based on selected subjects using hierarchical data
-  const filteredCourses = React.useMemo(() => {
-    if (filters.subjectAllow.size === 0) return new Set<string>();
-    
-    const courseSet = new Set<string>();
-    filters.subjectAllow.forEach(subject => {
-      const subjectInfo = subjectData.get(subject);
-      if (subjectInfo) {
-        subjectInfo.courseNumbers.forEach(course => courseSet.add(course));
-      }
-    });
-    return courseSet;
+  const courseNumbersBySubject = React.useMemo(() => {
+    return Array.from(filters.subjectAllow).sort().map(subject => ({
+      subject,
+      courseNumbers: Array.from(subjectData.get(subject)?.courseNumbers ?? []).sort(),
+    }));
   }, [filters.subjectAllow, subjectData]);
+
+  const setNeededCourses = (next: Set<string>) => {
+    onFilterChange(filtersFromNeededCourses(next, filters.subjectAllow, filters.neededCourses));
+  };
 
   const filteredInstructors = React.useMemo(() => {
     if (filters.subjectAllow.size === 0) return new Set<string>();
@@ -116,11 +114,10 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
       newSet.add(value);
     }
     
-    // If changing subjects, clear course, instructor, and campus filters
+    // Subjects scope the instructor/campus lists; chosen classes are left alone.
     if (type === 'subjectAllow') {
       onFilterChange({ 
         [type]: newSet,
-        courseAllow: new Set(),
         instructorAllow: new Set(),
         campusAllow: new Set()
       });
@@ -274,7 +271,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
     } else if (type === 'course') {
       const next = new Set(filters.neededCourses);
       next.add(value);
-      onFilterChange(filtersFromNeededCourses(next));
+      setNeededCourses(next);
       setSearchQuery('');
       setShowSearchResults(false);
       return;
@@ -285,7 +282,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
       if (course) {
         const next = new Set(filters.neededCourses);
         next.add(catalogClassKey(course.Subject, course.Course));
-        onFilterChange(filtersFromNeededCourses(next));
+        setNeededCourses(next);
       }
       setSearchQuery('');
       setShowSearchResults(false);
@@ -512,11 +509,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
                 key={key}
                 label={key}
                 size="small"
-                onDelete={() => {
-                  const next = new Set(filters.neededCourses);
-                  next.delete(key);
-                  onFilterChange(filtersFromNeededCourses(next));
-                }}
+                onDelete={() => setNeededCourses(toggleNeededCourse(filters.neededCourses, key))}
                 sx={{
                   background: 'linear-gradient(135deg, #2563eb, #059669)',
                   color: 'white',
@@ -676,36 +669,52 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
           </Box>
           
           <Collapse in={expandedSections.courses}>
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
-            {Array.from(filteredCourses).sort().map((course: string) => (
-              <Chip
-                key={course}
-                label={course}
-                clickable
-                color={filters.courseAllow.has(course) ? 'primary' : 'default'}
-                onClick={() => handleChipClick('courseAllow', course)}
-                size="small"
-                sx={{
-                  padding: '1px 1px',
-                  height: '24px',
-                  fontSize: '12px',
-                  background: filters.courseAllow.has(course) 
-                    ? 'linear-gradient(135deg, #2563eb, #059669)'
-                    : undefined,
-                  color: filters.courseAllow.has(course) ? 'white' : undefined,
-                  '&.MuiChip-clickable:hover': {
-                    background: filters.courseAllow.has(course)
-                      ? 'linear-gradient(135deg, #1d4ed8, #047857)'
-                      : (theme) => theme.palette.mode === 'dark' ? '#1a2532' : '#e5e7eb',
-                  },
-                  '&.MuiChip-colorPrimary': {
-                    borderColor: 'transparent',
-                    boxShadow: '0 2px 8px rgba(37, 99, 235, 0.3)',
-                  }
-                }}
-              />
+            {courseNumbersBySubject.map(({ subject, courseNumbers }) => (
+              <Box key={subject} sx={{ mb: 1.5 }}>
+                <Typography variant="caption" sx={{
+                  display: 'block',
+                  fontWeight: 600,
+                  color: 'text.secondary',
+                  mb: 0.5,
+                }}>
+                  {subject}
+                </Typography>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                  {courseNumbers.map((course: string) => {
+                    const key = catalogClassKey(subject, course);
+                    const chosen = filters.neededCourses.has(key);
+                    return (
+                      <Chip
+                        key={key}
+                        label={course}
+                        clickable
+                        color={chosen ? 'primary' : 'default'}
+                        onClick={() => setNeededCourses(toggleNeededCourse(filters.neededCourses, key))}
+                        size="small"
+                        sx={{
+                          padding: '1px 1px',
+                          height: '24px',
+                          fontSize: '12px',
+                          background: chosen
+                            ? 'linear-gradient(135deg, #2563eb, #059669)'
+                            : undefined,
+                          color: chosen ? 'white' : undefined,
+                          '&.MuiChip-clickable:hover': {
+                            background: chosen
+                              ? 'linear-gradient(135deg, #1d4ed8, #047857)'
+                              : (theme) => theme.palette.mode === 'dark' ? '#1a2532' : '#e5e7eb',
+                          },
+                          '&.MuiChip-colorPrimary': {
+                            borderColor: 'transparent',
+                            boxShadow: '0 2px 8px rgba(37, 99, 235, 0.3)',
+                          }
+                        }}
+                      />
+                    );
+                  })}
+                </Box>
+              </Box>
             ))}
-            </Box>
           </Collapse>
         </Box>
       )}

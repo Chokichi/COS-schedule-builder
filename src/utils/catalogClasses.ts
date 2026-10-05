@@ -67,30 +67,62 @@ export function searchCatalogClasses(classes: CatalogClass[], query: string): Ca
   }).slice(0, 40);
 }
 
+/**
+ * Chosen classes win whenever there are any; subject chips only scope the
+ * calendar while nothing has been chosen yet.
+ */
 export function matchesNeededOrSubjectFilters(
   course: Pick<Course, 'Subject' | 'Course'>,
-  filters: { neededCourses: Set<string>; subjectAllow: Set<string>; courseAllow: Set<string> }
+  filters: { neededCourses: Set<string>; subjectAllow: Set<string> }
 ): boolean {
   if (filters.neededCourses.size > 0) {
     return filters.neededCourses.has(catalogClassKey(course.Subject, course.Course));
   }
-  const subjOk = filters.subjectAllow.size === 0 || filters.subjectAllow.has(course.Subject);
-  const courseOk = filters.courseAllow.size === 0 || filters.courseAllow.has(course.Course);
-  return subjOk && courseOk;
+  return filters.subjectAllow.size === 0 || filters.subjectAllow.has(course.Subject);
 }
 
-export function filtersFromNeededCourses(neededCourses: Set<string>): {
+/**
+ * Newly added classes open their subject's course-number group; removing a
+ * class never re-opens a subject the student closed.
+ */
+export function filtersFromNeededCourses(
+  neededCourses: Set<string>,
+  currentSubjects: Set<string> = new Set(),
+  previousNeeded: Set<string> = new Set(),
+): {
   neededCourses: Set<string>;
   subjectAllow: Set<string>;
   courseAllow: Set<string>;
 } {
-  const subjectAllow = new Set<string>();
-  const courseAllow = new Set<string>();
+  const subjectAllow = new Set<string>(currentSubjects);
   neededCourses.forEach(key => {
+    if (previousNeeded.has(key)) return;
     const parsed = parseClassKey(key);
-    if (!parsed) return;
-    subjectAllow.add(parsed.subject);
-    courseAllow.add(parsed.course);
+    if (parsed) subjectAllow.add(parsed.subject);
   });
-  return { neededCourses: new Set(neededCourses), subjectAllow, courseAllow };
+  return { neededCourses: new Set(neededCourses), subjectAllow, courseAllow: new Set() };
+}
+
+/** Older saves filtered by bare course numbers; turn those into chosen classes. */
+export function neededFromLegacyCourseFilter(
+  subjectAllow: Set<string>,
+  courseAllow: Set<string>,
+  catalog: Pick<Course, 'Subject' | 'Course'>[],
+): Set<string> {
+  const needed = new Set<string>();
+  if (courseAllow.size === 0) return needed;
+  for (const course of catalog) {
+    const subjectOk = subjectAllow.size === 0 || subjectAllow.has(course.Subject);
+    if (subjectOk && courseAllow.has(course.Course)) {
+      needed.add(catalogClassKey(course.Subject, course.Course));
+    }
+  }
+  return needed;
+}
+
+export function toggleNeededCourse(neededCourses: Set<string>, key: string): Set<string> {
+  const next = new Set(neededCourses);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  return next;
 }
