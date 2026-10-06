@@ -239,6 +239,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
                   : 'rgba(37, 99, 235, 0.08)',
               }}>
                 Search for the classes you already know you need, like <strong>MATH 010</strong> or <strong>CHEM 012</strong>.
+                You can also type the name of the class if you don’t know the course number.
                 We’ll put every available section on the calendar so you can pick times that fit.
               </Typography>
 
